@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id          String           @id @default(cuid())
+  name        String
+  country     String?
+  city        String?
+  address     String?
+  phone       String?
+  contactName String?
+  contactRole String?
+  website     String?
+  sourceUrl   String?
+  externalId  String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  products    CompanyProduct[]
+
+  @@unique([name, country])
+  @@index([country])
+  @@index([name])
+}
+
+model CompanyProduct {
+  id              String   @id @default(cuid())
+  companyId       String
+  productCategory String?
+  hsCode          String?
+  tradeType       String?  // Exporter, Importer, Both
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([hsCode])
+  @@index([productCategory])
+}
+
+model ScrapeJob {
+  id           String    @id @default(cuid())
+  status       String    // PENDING, RUNNING, COMPLETED, FAILED
+  source       String    @default("trademap")
+  target       String?
+  recordsFound Int       @default(0)
+  logs         String?
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+}
