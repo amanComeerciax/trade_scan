@@ -1,5 +1,6 @@
 import axios, { AxiosProxyConfig } from "axios";
 import { prisma } from "./prisma";
+import { resolveCommodity } from "./aiParser";
 
 export interface ScrapeParams {
   country?: string;
@@ -97,7 +98,11 @@ export async function executeScrapeJob(params: ScrapeParams): Promise<{
   message: string;
 }> {
   const countryName = params.country?.trim() || "India";
-  const targetLabel = `${countryName} | HS:${params.hsCode || "All"} | ${params.tradeFlow || "exports"}`;
+  const resolvedCommodity = resolveCommodity(params.hsCode);
+  const activeHsCode = resolvedCommodity.hsCode || (params.hsCode && /^[0-9]+$/.test(params.hsCode) ? params.hsCode : undefined);
+  const activeCategory = resolvedCommodity.category || params.productCategory || (activeHsCode ? `HS ${activeHsCode} Sector` : "General Merchandise");
+
+  const targetLabel = `${countryName} | HS:${activeHsCode || "All"} | ${params.tradeFlow || "exports"}`;
 
   // 1. Create a ScrapeJob entry in DB
   const job = await prisma.scrapeJob.create({
@@ -138,13 +143,13 @@ export async function executeScrapeJob(params: ScrapeParams): Promise<{
       page: 1,
     };
 
-    if (params.hsCode && params.hsCode.trim()) {
+    if (activeHsCode) {
       queryParams.productType = "p";
-      queryParams.product = params.hsCode.trim();
+      queryParams.product = activeHsCode;
     }
 
     logMessages.push(`Calling TradeMap live API: ${apiUrl}`);
-    logMessages.push(`Params: country=${resolvedCountryCode} (${countryName}), flow=${tradeFlowCode}, hs=${params.hsCode || "All"}`);
+    logMessages.push(`Params: country=${resolvedCountryCode} (${countryName}), flow=${tradeFlowCode}, hs=${activeHsCode || "All"}`);
 
     const response = await axios.get(apiUrl, {
       params: queryParams,
@@ -214,8 +219,8 @@ export async function executeScrapeJob(params: ScrapeParams): Promise<{
           contactRole: contact?.role || undefined,
           website: rec.website || undefined,
           sourceUrl: `https://www.trademap.org/companies/${rec.id || ""}`,
-          hsCode: params.hsCode || undefined,
-          productCategory: params.productCategory || (params.hsCode ? `HS ${params.hsCode} Commodity Sector` : "General Merchandise"),
+          hsCode: activeHsCode || undefined,
+          productCategory: activeCategory || (activeHsCode ? `HS ${activeHsCode} Commodity Sector` : "General Merchandise"),
           tradeType: tradeTypes,
         });
       }
@@ -290,7 +295,7 @@ export async function executeScrapeJob(params: ScrapeParams): Promise<{
         status: "COMPLETED",
         recordsFound: savedCount,
         logs: logMessages.join("\n"),
-        finishedAt: new Date(),
+        completedAt: new Date(),
       },
     });
 
@@ -308,7 +313,7 @@ export async function executeScrapeJob(params: ScrapeParams): Promise<{
       data: {
         status: "FAILED",
         logs: `Error: ${message}`,
-        finishedAt: new Date(),
+        completedAt: new Date(),
       },
     });
 

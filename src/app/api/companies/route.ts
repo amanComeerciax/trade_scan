@@ -18,13 +18,18 @@ export async function GET(request: Request) {
 
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { city: { contains: search } },
-        { address: { contains: search } },
+        { name: { contains: search, mode: "insensitive" } },
+        { city: { contains: search, mode: "insensitive" } },
+        { address: { contains: search, mode: "insensitive" } },
+        { contactName: { contains: search, mode: "insensitive" } },
+        { phone: { contains: search, mode: "insensitive" } },
         {
           products: {
             some: {
-              productCategory: { contains: search },
+              OR: [
+                { productCategory: { contains: search, mode: "insensitive" } },
+                { hsCode: { contains: search, mode: "insensitive" } },
+              ],
             },
           },
         },
@@ -38,8 +43,8 @@ export async function GET(request: Request) {
     if (hsCode || tradeType) {
       where.products = {
         some: {
-          ...(hsCode ? { hsCode: { startsWith: hsCode } } : {}),
-          ...(tradeType ? { tradeType: { contains: tradeType } } : {}),
+          ...(hsCode ? { hsCode: { startsWith: hsCode, mode: "insensitive" } } : {}),
+          ...(tradeType ? { tradeType: { contains: tradeType, mode: "insensitive" } } : {}),
         },
       };
     }
@@ -81,5 +86,52 @@ export async function GET(request: Request) {
       { error: "Failed to fetch companies", details: message },
       { status: 500 }
     );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    const all = searchParams.get("all");
+
+    let body: { ids?: string[] } = {};
+    try {
+      body = await request.json();
+    } catch {
+      // no JSON body
+    }
+
+    // 1. Wipe all data
+    if (all === "true") {
+      const deleteProducts = prisma.companyProduct.deleteMany();
+      const deleteCompanies = prisma.company.deleteMany();
+      await prisma.$transaction([deleteProducts, deleteCompanies]);
+      return NextResponse.json({ success: true, message: "All company data cleared successfully." });
+    }
+
+    // 2. Single company delete
+    if (id) {
+      await prisma.company.delete({ where: { id } });
+      return NextResponse.json({ success: true, message: "Company deleted successfully." });
+    }
+
+    // 3. Batch delete selected companies
+    if (body.ids && Array.isArray(body.ids) && body.ids.length > 0) {
+      await prisma.company.deleteMany({
+        where: { id: { in: body.ids } },
+      });
+      return NextResponse.json({
+        success: true,
+        count: body.ids.length,
+        message: `${body.ids.length} companies deleted successfully.`,
+      });
+    }
+
+    return NextResponse.json({ error: "Missing id, ids array, or all=true" }, { status: 400 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to delete";
+    console.error("Error deleting company:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

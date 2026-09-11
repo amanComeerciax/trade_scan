@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { resolveCommodity } from "@/lib/aiParser";
+import { TradeScanLogo, TradeScanMark } from "@/components/TradeScanLogo";
 import {
   Globe,
   Download,
@@ -12,9 +14,12 @@ import {
   Clock,
   SlidersHorizontal,
   ChevronDown,
-  Sparkles,
+  Command,
   Send,
-  Zap,
+  Compass,
+  Play,
+  ArrowUpRight,
+  ShieldCheck,
   BarChart3,
   GitBranch,
   Settings,
@@ -33,6 +38,7 @@ import {
   Package,
   MapPin,
   CheckCircle2,
+  Trash2,
 } from "lucide-react";
 
 interface CompanyProduct {
@@ -85,15 +91,99 @@ export default function Dashboard() {
   // Modals & Panels
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [isScraperModalOpen, setIsScraperModalOpen] = useState(false);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("Find top cotton fabric exporters in India");
+  const [aiResultText, setAiResultText] = useState("");
+  const [isAIRunning, setIsAIRunning] = useState(false);
   const [activeCompany, setActiveCompany] = useState<Company | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Scraper Controller State
   const [scrapeCountry, setScrapeCountry] = useState("India");
-  const [scrapeHsCode, setScrapeHsCode] = useState("0901");
+  const [scrapeHsCode, setScrapeHsCode] = useState("Spices");
   const [scrapeTradeFlow, setScrapeTradeFlow] = useState<"exports" | "imports">("exports");
   const [isScraping, setIsScraping] = useState(false);
   const [scrapeLogs, setScrapeLogs] = useState<string>("");
+
+  // Selection & Deletion State
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === companies.length && companies.length > 0) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(companies.map((c) => c.id));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleDeleteCompany = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete "${name}"?`)) return;
+    try {
+      setIsDeleting(true);
+      const res = await fetch(`/api/companies?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setCompanies((prev) => prev.filter((c) => c.id !== id));
+        setSelectedIds((prev) => prev.filter((item) => item !== id));
+        if (activeCompany?.id === id) setActiveCompany(null);
+        fetchData();
+        fetchStats();
+      }
+    } catch (err) {
+      console.error("Error deleting company:", err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedIds.length} selected companies?`)) return;
+    try {
+      setIsDeleting(true);
+      const res = await fetch("/api/companies", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSelectedIds([]);
+        fetchData();
+        fetchStats();
+      }
+    } catch (err) {
+      console.error("Error deleting selected companies:", err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleClearAllData = async () => {
+    if (!confirm("Are you sure you want to clear ALL scraped companies from the database?")) return;
+    try {
+      setIsDeleting(true);
+      const res = await fetch("/api/companies?all=true", { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setSelectedIds([]);
+        setActiveCompany(null);
+        fetchData(1);
+        fetchStats();
+      }
+    } catch (err) {
+      console.error("Error clearing all data:", err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Manual fetch for pagination and refresh
   const fetchData = async (pageNum = page) => {
@@ -211,6 +301,50 @@ export default function Dashboard() {
     }
   };
 
+  // Handle AI-powered Natural Language Scraper
+  const handleAIScrape = async () => {
+    if (!aiPrompt.trim()) return;
+    setIsAIRunning(true);
+    setAiResultText("🤖 AI Agent is parsing intent and searching TradeMap global directories...");
+
+    try {
+      const res = await fetch("/api/ai-scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: aiPrompt, limit: 10 }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        const analysis = data.aiAnalysis;
+        setAiResultText(
+          `✓ ${analysis.explanation}\nExtracted ${data.scrapeResult.recordsFound} live companies into your directory.`
+        );
+        fetchData(1);
+        fetchStats();
+      } else {
+        setAiResultText(`✗ AI Scraper Error: ${data.error}`);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Request failed";
+      setAiResultText(`✗ Network Error: ${message}`);
+    } finally {
+      setIsAIRunning(false);
+    }
+  };
+
+  // Keyboard shortcut (Ctrl+K or Cmd+K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsAIModalOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   // Export handlers
   const handleExport = (format: "xlsx" | "csv") => {
     const query = new URLSearchParams({
@@ -248,12 +382,7 @@ export default function Dashboard() {
       <aside className="sidebar">
         {/* Brand */}
         <div className="sidebar-header">
-          <div className="logo-group">
-            <div className="logo-icon">
-              <Sparkles size={16} />
-            </div>
-            <span className="logo-text">TradeScan</span>
-          </div>
+          <TradeScanLogo size={30} showText={true} showBadge={true} />
           <button className="collapse-btn" title="Collapse sidebar">
             <PanelLeftClose size={14} />
           </button>
@@ -279,7 +408,7 @@ export default function Dashboard() {
             }}
             className="nav-item"
           >
-            <Zap size={16} />
+            <Compass size={16} />
             <span>Scraper Engine</span>
           </a>
           <a
@@ -378,9 +507,14 @@ export default function Dashboard() {
 
         {/* Sub-header Bar */}
         <div className="sub-header-bar">
-          <div className="ask-pill">
-            <Sparkles size={14} style={{ color: "#9333ea" }} />
-            <span>Ask TradeScan Intelligence</span>
+          <div
+            className="ask-pill"
+            onClick={() => setIsAIModalOpen(true)}
+            style={{ cursor: "pointer" }}
+            title="Open Natural Language Trade Intelligence (Ctrl+K)"
+          >
+            <Command size={13} style={{ color: "#2563eb" }} />
+            <span>Search Trade Intelligence</span>
             <span className="kbd-shortcut">Ctrl+K</span>
           </div>
           <div className="events-indicator">
@@ -479,6 +613,24 @@ export default function Dashboard() {
             </div>
 
             <div className="toolbar-actions">
+              {selectedIds.length > 0 && (
+                <button
+                  onClick={handleDeleteSelected}
+                  disabled={isDeleting}
+                  className="action-btn"
+                  style={{
+                    borderColor: "#fca5a5",
+                    background: "#fef2f2",
+                    color: "#dc2626",
+                    fontWeight: 600,
+                  }}
+                  title="Delete selected companies"
+                >
+                  <Trash2 size={14} />
+                  <span>Delete ({selectedIds.length})</span>
+                </button>
+              )}
+
               <button
                 onClick={() => setIsFilterModalOpen(true)}
                 className="action-btn"
@@ -491,7 +643,7 @@ export default function Dashboard() {
                 onClick={() => setIsScraperModalOpen(true)}
                 className="action-btn primary"
               >
-                <Zap size={14} />
+                <Play size={13} fill="currentColor" />
                 <span>Run Scraper</span>
               </button>
 
@@ -512,6 +664,19 @@ export default function Dashboard() {
                 <Download size={14} />
                 <span>CSV</span>
               </button>
+
+              {companies.length > 0 && (
+                <button
+                  onClick={handleClearAllData}
+                  disabled={isDeleting}
+                  className="action-btn"
+                  style={{ color: "#ef4444", borderColor: "#fecaca" }}
+                  title="Clear all stored companies from database"
+                >
+                  <Trash2 size={14} />
+                  <span>Clear All</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -520,7 +685,13 @@ export default function Dashboard() {
             <thead>
               <tr>
                 <th style={{ width: "3%" }}>
-                  <input type="checkbox" style={{ cursor: "pointer" }} />
+                  <input
+                    type="checkbox"
+                    style={{ cursor: "pointer" }}
+                    checked={companies.length > 0 && selectedIds.length === companies.length}
+                    onChange={toggleSelectAll}
+                    title="Select all"
+                  />
                 </th>
                 <th style={{ width: "22%" }}>Company Name ↕</th>
                 <th style={{ width: "12%" }}>Country ↕</th>
@@ -528,7 +699,7 @@ export default function Dashboard() {
                 <th style={{ width: "10%" }}>HS Code ↕</th>
                 <th style={{ width: "23%" }}>Product Category / Sector ↕</th>
                 <th style={{ width: "12%" }}>Scraped Date ↕</th>
-                <th style={{ width: "6%", textAlign: "right" }}>Actions ↕</th>
+                <th style={{ width: "8%", textAlign: "right" }}>Actions ↕</th>
               </tr>
             </thead>
             <tbody>
@@ -547,11 +718,17 @@ export default function Dashboard() {
                   const primaryProduct = company.products[0];
                   const { time, date } = formatDateTime(company.createdAt);
                   const isExporter = primaryProduct?.tradeType !== "Importer";
+                  const isSelected = selectedIds.includes(company.id);
 
                   return (
-                    <tr key={company.id}>
+                    <tr key={company.id} style={{ background: isSelected ? "#f8fafc" : undefined }}>
                       <td>
-                        <input type="checkbox" style={{ cursor: "pointer" }} />
+                        <input
+                          type="checkbox"
+                          style={{ cursor: "pointer" }}
+                          checked={isSelected}
+                          onChange={() => toggleSelect(company.id)}
+                        />
                       </td>
                       <td>
                         <div className="cell-type">
@@ -631,6 +808,14 @@ export default function Dashboard() {
                             title="View full trade details"
                           >
                             <SlidersHorizontal size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCompany(company.id, company.name)}
+                            className="mini-icon-btn"
+                            title="Delete this company"
+                            style={{ color: "#ef4444" }}
+                          >
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       </td>
@@ -756,96 +941,109 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 5. Scraper Extraction Modal */}
-      {isScraperModalOpen && (
-        <div className="modal-backdrop" onClick={() => setIsScraperModalOpen(false)}>
-          <div className="modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "520px" }}>
+      {/* 5. AI Scraper Prompt Modal */}
+      {isAIModalOpen && (
+        <div className="modal-backdrop" onClick={() => setIsAIModalOpen(false)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "540px" }}>
             <div className="modal-header">
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <Zap size={18} style={{ color: "#9333ea" }} />
-                <h3 className="modal-title">TradeMap Extraction Control</h3>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <TradeScanMark size={30} />
+                <div>
+                  <h3 className="modal-title" style={{ fontSize: "16px", margin: 0 }}>Natural Language Trade Query</h3>
+                  <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Instant AI Resolution & TradeMap Extraction</span>
+                </div>
               </div>
-              <button onClick={() => setIsScraperModalOpen(false)} className="mini-icon-btn">
+              <button onClick={() => setIsAIModalOpen(false)} className="mini-icon-btn">
                 <X size={16} />
               </button>
             </div>
 
+            <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "14px", lineHeight: "1.4" }}>
+              Type any trade inquiry in plain English. The AI agent will automatically resolve the country, international HS code, and trade flow, then extract verified companies directly from TradeMap.org.
+            </p>
+
             <div className="modal-form-group">
-              <label className="modal-label">Target Country</label>
-              <input
-                type="text"
-                value={scrapeCountry}
-                onChange={(e) => setScrapeCountry(e.target.value)}
-                placeholder="e.g. India, Germany, Vietnam, USA"
+              <label className="modal-label">Your Inquiry / Prompt</label>
+              <textarea
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                placeholder="e.g. Find cotton fabric exporters in India, or Top coffee buyers in Germany"
                 className="modal-input"
+                style={{ height: "65px", paddingTop: "8px", resize: "none" }}
               />
             </div>
 
-            <div className="modal-form-group">
-              <label className="modal-label">HS Product Code / Keyword</label>
-              <input
-                type="text"
-                value={scrapeHsCode}
-                onChange={(e) => setScrapeHsCode(e.target.value)}
-                placeholder="e.g. 0901 (Coffee/Spices), 5208 (Cotton), 8542 (Electronics)"
-                className="modal-input"
-              />
+            {/* Quick Prompt Suggestions */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "16px" }}>
+              {[
+                "Rice exporters in India",
+                "Spices exporters in India",
+                "Tea exporters in India",
+                "Cotton fabric exporters in India",
+                "Leather exporters in India",
+                "Coffee buyers in Germany",
+                "Pharma exporters in India",
+              ].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => setAiPrompt(suggestion)}
+                  style={{
+                    fontSize: "11px",
+                    padding: "4px 8px",
+                    background: "#f1f5f9",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "14px",
+                    cursor: "pointer",
+                    color: "#475569",
+                  }}
+                >
+                  ⚡ {suggestion}
+                </button>
+              ))}
             </div>
 
-            <div className="modal-form-group">
-              <label className="modal-label">Trade Flow</label>
-              <select
-                value={scrapeTradeFlow}
-                onChange={(e) => setScrapeTradeFlow(e.target.value as "exports" | "imports")}
-                className="modal-select"
-              >
-                <option value="exports">Exporters / Suppliers</option>
-                <option value="imports">Importers / Buyers</option>
-              </select>
-            </div>
-
-            {scrapeLogs && (
+            {aiResultText && (
               <div
                 style={{
                   background: "#0f172a",
                   color: "#93c5fd",
                   borderRadius: "8px",
                   padding: "12px",
-                  fontSize: "11px",
+                  fontSize: "12px",
                   fontFamily: "var(--font-mono)",
-                  maxHeight: "100px",
-                  overflowY: "auto",
-                  marginBottom: "14px",
+                  marginBottom: "16px",
                   whiteSpace: "pre-wrap",
+                  lineHeight: "1.5",
                 }}
               >
-                {scrapeLogs}
+                {aiResultText}
               </div>
             )}
 
-            <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
+            <div style={{ display: "flex", gap: "10px" }}>
               <button
-                onClick={() => setIsScraperModalOpen(false)}
+                onClick={() => setIsAIModalOpen(false)}
                 className="action-btn"
                 style={{ flex: 1 }}
               >
                 Close
               </button>
               <button
-                onClick={handleTriggerScrape}
-                disabled={isScraping}
+                onClick={handleAIScrape}
+                disabled={isAIRunning}
                 className="action-btn primary"
                 style={{ flex: 1.5, justifyContent: "center" }}
               >
-                {isScraping ? (
+                {isAIRunning ? (
                   <>
                     <RefreshCw size={14} className="spin" />
-                    Extracting...
+                    AI Extracting...
                   </>
                 ) : (
                   <>
-                    <Zap size={14} />
-                    Execute Scrape
+                    <ArrowUpRight size={15} />
+                    Execute Query
                   </>
                 )}
               </button>
@@ -853,6 +1051,315 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* 5. Scraper Extraction Modal */}
+      {isScraperModalOpen && (() => {
+        const currentCommodityInfo = resolveCommodity(scrapeHsCode);
+        return (
+          <div className="modal-backdrop" onClick={() => setIsScraperModalOpen(false)}>
+            <div
+              className="modal-dialog"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                maxWidth: "520px",
+                padding: "26px",
+                borderRadius: "18px",
+                border: "1px solid #e2e8f0",
+                boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.25)",
+              }}
+            >
+              {/* Header */}
+              <div className="modal-header" style={{ marginBottom: "20px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <TradeScanMark size={38} />
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <h3 className="modal-title" style={{ fontSize: "16px", margin: 0 }}>
+                        TradeMap Live Scraper
+                      </h3>
+                      <span
+                        style={{
+                          fontSize: "10.5px",
+                          fontWeight: 600,
+                          padding: "2px 7px",
+                          borderRadius: "12px",
+                          background: "#ecfdf5",
+                          color: "#059669",
+                          border: "1px solid #a7f3d0",
+                        }}
+                      >
+                        Direct API
+                      </span>
+                    </div>
+                    <p style={{ fontSize: "12px", color: "var(--text-secondary)", margin: "2px 0 0 0" }}>
+                      Extract verified exporter directories with director names & phone contacts
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsScraperModalOpen(false)}
+                  className="mini-icon-btn"
+                  style={{ borderRadius: "8px", width: "30px", height: "30px" }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* 1. Target Country Dropdown */}
+              <div className="modal-form-group" style={{ marginBottom: "16px" }}>
+                <label className="modal-label">Target Country / Market</label>
+                <div className="input-with-icon-wrapper">
+                  <Globe size={15} className="input-icon-left" />
+                  <select
+                    value={scrapeCountry}
+                    onChange={(e) => setScrapeCountry(e.target.value)}
+                    className="modal-select"
+                  >
+                    <option value="India">🇮🇳 India (Top Global Exporter Hub)</option>
+                    <option value="Germany">🇩🇪 Germany (European Commerce)</option>
+                    <option value="Vietnam">🇻🇳 Vietnam (Southeast Asia)</option>
+                    <option value="United States">🇺🇸 United States (North America)</option>
+                    <option value="United Arab Emirates">🇦🇪 United Arab Emirates (Middle East)</option>
+                    <option value="China">🇨🇳 China (East Asia)</option>
+                    <option value="United Kingdom">🇬🇧 United Kingdom (UK)</option>
+                    <option value="Brazil">🇧🇷 Brazil (South America)</option>
+                    <option value="Singapore">🇸🇬 Singapore (Global Trading Hub)</option>
+                    <option value="France">🇫🇷 France</option>
+                    <option value="Italy">🇮🇹 Italy</option>
+                    <option value="Japan">🇯🇵 Japan</option>
+                    <option value="Canada">🇨🇦 Canada</option>
+                    <option value="Australia">🇦🇺 Australia</option>
+                    <option value="Turkey">🇹🇷 Turkey</option>
+                    <option value="Indonesia">🇮🇩 Indonesia</option>
+                    <option value="Malaysia">🇲🇾 Malaysia</option>
+                    <option value="South Korea">🇰🇷 South Korea</option>
+                    <option value="Thailand">🇹🇭 Thailand</option>
+                    <option value="Spain">🇪🇸 Spain</option>
+                    <option value="Netherlands">🇳🇱 Netherlands</option>
+                    <option value="Saudi Arabia">🇸🇦 Saudi Arabia</option>
+                  </select>
+                </div>
+                {/* Quick Country Pills */}
+                <div className="quick-pill-container">
+                  {[
+                    { label: "🇮🇳 India", val: "India" },
+                    { label: "🇩🇪 Germany", val: "Germany" },
+                    { label: "🇻🇳 Vietnam", val: "Vietnam" },
+                    { label: "🇺🇸 USA", val: "United States" },
+                    { label: "🇦🇪 UAE", val: "United Arab Emirates" },
+                    { label: "🇨🇳 China", val: "China" },
+                  ].map((c) => (
+                    <button
+                      key={c.val}
+                      type="button"
+                      onClick={() => setScrapeCountry(c.val)}
+                      className={`quick-pill ${scrapeCountry.toLowerCase() === c.val.toLowerCase() ? "active" : ""}`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 2. Goods / Commodity Dropdown */}
+              <div className="modal-form-group" style={{ marginBottom: "16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                  <label className="modal-label" style={{ margin: 0 }}>Goods / Commodity</label>
+                  <span style={{ fontSize: "11px", color: "#2563eb", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
+                    <CheckCircle2 size={12} style={{ color: "#16a34a" }} /> Auto-Maps to HS Code
+                  </span>
+                </div>
+                <div className="input-with-icon-wrapper">
+                  <Package size={15} className="input-icon-left" />
+                  <select
+                    value={scrapeHsCode}
+                    onChange={(e) => setScrapeHsCode(e.target.value)}
+                    className="modal-select"
+                  >
+                    <option value="Spices">🌶️ Spices & Aromatics (HS 0901)</option>
+                    <option value="Rice">🌾 Rice & Grain Products (HS 1006)</option>
+                    <option value="Tea">🫖 Tea whether or not flavored (HS 0902)</option>
+                    <option value="Coffee">☕ Coffee & Maté (HS 0901)</option>
+                    <option value="Cotton">👕 Woven Fabrics of Cotton (HS 5208)</option>
+                    <option value="Yarn">🧵 Cotton Yarn & Thread (HS 5205)</option>
+                    <option value="Apparel">👔 Garments & Apparel (HS 6203)</option>
+                    <option value="Tshirt">🎽 T-Shirts & Knitted Wear (HS 6109)</option>
+                    <option value="Leather">👞 Leather & Finished Hides (HS 4107)</option>
+                    <option value="Footwear">👠 Footwear & Shoes (HS 6403)</option>
+                    <option value="Pharma">💊 Pharmaceuticals & Medicaments (HS 3004)</option>
+                    <option value="Chemical">🧪 Organic & Industrial Chemicals (HS 2905)</option>
+                    <option value="Wheat">🌾 Wheat & Meslin (HS 1001)</option>
+                    <option value="Sugar">🍬 Cane or Beet Sugar (HS 1701)</option>
+                    <option value="Jewellery">💎 Articles of Jewellery & Parts (HS 7113)</option>
+                    <option value="Gold">✨ Gold & Bullion (HS 7108)</option>
+                    <option value="Diamond">💠 Diamonds, worked or unworked (HS 7102)</option>
+                    <option value="Steel">🏗️ Flat-rolled Iron & Steel (HS 7208)</option>
+                    <option value="Aluminium">🔩 Unwrought Aluminium (HS 7601)</option>
+                    <option value="Copper">🥉 Refined Copper & Alloys (HS 7403)</option>
+                    <option value="Electronics">🔌 Electronic Integrated Circuits (HS 8542)</option>
+                    <option value="Mobile">📱 Smartphones & Telephones (HS 8517)</option>
+                    <option value="Computer">💻 Computers & Processing Units (HS 8471)</option>
+                    <option value="Ceramic">🧱 Ceramic Tiles & Paving (HS 6907)</option>
+                    <option value="Plastic">🧴 Polymers of Ethylene & Plastics (HS 3901)</option>
+                    <option value="Oil">🛢️ Petroleum Fuels & Oils (HS 2710)</option>
+                    <option value="Dairy">🥛 Milk & Dairy Products (HS 0401)</option>
+                    <option value="Meat">🥩 Meat of Bovine Animals (HS 0201)</option>
+                    <option value="">🌐 All Commodities (No Sector Filter)</option>
+                  </select>
+                </div>
+
+                {/* Dynamic Mapped Pill */}
+                {currentCommodityInfo.hsCode && (
+                  <div className="mapped-indicator-badge">
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <CheckCircle2 size={13} style={{ color: "#16a34a" }} />
+                      <span>
+                        <strong>HS {currentCommodityInfo.hsCode}</strong> • {currentCommodityInfo.category}
+                      </span>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        background: "#dcfce7",
+                        color: "#166534",
+                        padding: "1px 6px",
+                        borderRadius: "4px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Ready
+                    </span>
+                  </div>
+                )}
+
+                {/* Quick Commodity Pills */}
+                <div className="quick-pill-container" style={{ marginTop: "8px" }}>
+                  {[
+                    { label: "🌾 Rice", val: "Rice" },
+                    { label: "🫖 Tea", val: "Tea" },
+                    { label: "🌶️ Spices", val: "Spices" },
+                    { label: "👕 Cotton", val: "Cotton" },
+                    { label: "☕ Coffee", val: "Coffee" },
+                    { label: "👞 Leather", val: "Leather" },
+                    { label: "💊 Pharma", val: "Pharma" },
+                    { label: "💎 Jewelry", val: "Jewellery" },
+                    { label: "🏗️ Steel", val: "Steel" },
+                    { label: "🌐 All Goods", val: "" },
+                  ].map((g) => {
+                    const isAct = g.val === "" ? !scrapeHsCode.trim() : scrapeHsCode.toLowerCase().includes(g.val.toLowerCase());
+                    return (
+                      <button
+                        key={g.label}
+                        type="button"
+                        onClick={() => setScrapeHsCode(g.val)}
+                        className={`quick-pill ${isAct ? "active" : ""}`}
+                      >
+                        {g.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Trade Flow Dropdown */}
+              <div className="modal-form-group" style={{ marginBottom: "16px" }}>
+                <label className="modal-label">Trade Flow</label>
+                <select
+                  value={scrapeTradeFlow}
+                  onChange={(e) => setScrapeTradeFlow(e.target.value as "exports" | "imports")}
+                  className="modal-select"
+                >
+                  <option value="exports">↗ Exporters / Suppliers</option>
+                  <option value="imports">↙ Importers / Buyers</option>
+                </select>
+              </div>
+
+              {/* 4. Verified Data Guarantee Info Callout */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                  padding: "10px 12px",
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "10px",
+                  marginBottom: "16px",
+                }}
+              >
+                <ShieldCheck size={16} style={{ color: "#16a34a", marginTop: "2px", flexShrink: 0 }} />
+                <div style={{ fontSize: "11.5px", color: "#475569", lineHeight: "1.45" }}>
+                  <strong style={{ color: "#0f172a" }}>Verified Profiles:</strong> Extracts Official Company Name, City, Website Link, Executive Director/MD & Direct Phone Number.
+                </div>
+              </div>
+
+              {/* 5. Logs Console */}
+              {scrapeLogs && (
+                <div
+                  style={{
+                    background: "#0f172a",
+                    color: "#93c5fd",
+                    borderRadius: "10px",
+                    padding: "12px",
+                    fontSize: "11px",
+                    fontFamily: "var(--font-mono)",
+                    maxHeight: "100px",
+                    overflowY: "auto",
+                    marginBottom: "16px",
+                    whiteSpace: "pre-wrap",
+                    border: "1px solid #1e293b",
+                  }}
+                >
+                  {scrapeLogs}
+                </div>
+              )}
+
+              {/* 6. Modal Footer Action Buttons */}
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  onClick={() => setIsScraperModalOpen(false)}
+                  className="action-btn"
+                  style={{
+                    flex: 1,
+                    height: "42px",
+                    justifyContent: "center",
+                    borderRadius: "10px",
+                    fontWeight: 600,
+                  }}
+                >
+                  Close
+                </button>
+                <button
+                  onClick={handleTriggerScrape}
+                  disabled={isScraping}
+                  className="action-btn primary"
+                  style={{
+                    flex: 1.6,
+                    height: "42px",
+                    justifyContent: "center",
+                    borderRadius: "10px",
+                    fontWeight: 600,
+                    background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
+                    boxShadow: "0 4px 12px rgba(15, 23, 42, 0.18)",
+                  }}
+                >
+                  {isScraping ? (
+                    <>
+                      <RefreshCw size={15} className="spin" />
+                      Extracting Live TradeMap...
+                    </>
+                  ) : (
+                    <>
+                      <Play size={13} fill="currentColor" />
+                      Execute Live Scrape
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 6. Slide-Over Detail Drawer */}
       {activeCompany && (
@@ -958,14 +1465,30 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div style={{ marginTop: "auto", paddingTop: "20px" }}>
+            <div style={{ marginTop: "auto", paddingTop: "20px", display: "flex", gap: "10px" }}>
               <button
                 onClick={() => handleExport("xlsx")}
                 className="action-btn primary"
-                style={{ width: "100%", justifyContent: "center" }}
+                style={{ flex: 1.5, justifyContent: "center" }}
               >
                 <FileSpreadsheet size={15} />
                 Export to Excel
+              </button>
+              <button
+                onClick={() => handleDeleteCompany(activeCompany.id, activeCompany.name)}
+                className="action-btn"
+                style={{
+                  flex: 1,
+                  justifyContent: "center",
+                  borderColor: "#fca5a5",
+                  background: "#fef2f2",
+                  color: "#dc2626",
+                  fontWeight: 600,
+                }}
+                title="Delete this company profile"
+              >
+                <Trash2 size={15} />
+                Delete
               </button>
             </div>
           </div>
