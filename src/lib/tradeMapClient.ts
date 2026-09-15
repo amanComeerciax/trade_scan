@@ -12,8 +12,10 @@ export interface ScrapeParams {
 }
 
 export interface ExtractedCompany {
+  trademapId?: string;
   name: string;
   country: string;
+  countryCode?: string;
   city?: string;
   address?: string;
   phone?: string;
@@ -21,6 +23,11 @@ export interface ExtractedCompany {
   contactRole?: string;
   website?: string;
   sourceUrl?: string;
+  activities?: string;
+  annualTurnover?: string;
+  numberOfEmployees?: string;
+  updateDate?: string;
+  sourceId?: number;
   hsCode?: string;
   productCategory?: string;
   tradeType?: string;
@@ -33,8 +40,11 @@ interface RawTradeMapRecord {
   countryCd?: string;
   activities?: string[];
   website?: string;
-  sourceId?: number;
-  publicAccessToken?: string;
+  annualTurnover?: string | number | null;
+  numberOfEmployees?: string | number | null;
+  updateDate?: string | null;
+  sourceId?: number | null;
+  publicAccessToken?: string | null;
 }
 
 // User-Agent pool for anti-bot rotation
@@ -71,6 +81,38 @@ const COUNTRY_CODES: Record<string, string> = {
   jp: "392",
   "united kingdom": "826",
   uk: "826",
+};
+
+const COMMODITY_SUBCODES: Record<string, string[]> = {
+  // Coffee & Spices
+  "0901": ["0901", "090111", "090112", "090121", "090122", "090190"],
+  "09": ["09", "0901", "0902", "0904", "0910"],
+  "0902": ["0902", "090210", "090220", "090230", "090240"],
+  // Rice & Grains
+  "1006": ["1006", "100610", "100620", "100630", "100640"],
+  "1001": ["1001", "100111", "100119", "100191", "100199"],
+  // Cotton & Textiles
+  "5208": ["5208", "5205", "5209", "5211", "5212"],
+  "5205": ["5205", "520511", "520512", "520521", "520522"],
+  "6203": ["6203", "6204", "6109", "6110", "6205"],
+  "6109": ["6109", "610910", "610990", "6108"],
+  // Pharma & Chemicals
+  "3004": ["3004", "3003", "3002", "3001", "3006"],
+  "2905": ["2905", "2801", "2901", "2902", "2903"],
+  // Steel & Metals
+  "7208": ["7208", "7209", "7210", "7214", "7216"],
+  "7601": ["7601", "7602", "7604", "7606"],
+  "7403": ["7403", "7404", "7407", "7408"],
+  // Jewelry & Gems
+  "7113": ["7113", "7102", "7108", "7117", "7118"],
+  "7108": ["7108", "710811", "710812", "710813"],
+  "7102": ["7102", "710210", "710221", "710231"],
+  // Footwear & Leather
+  "6403": ["6403", "6402", "6404", "6405"],
+  "4107": ["4107", "4104", "4105", "4106"],
+  // Electronics
+  "8542": ["8542", "8517", "8528", "8504", "8471"],
+  "8517": ["8517", "851712", "851713", "851762"],
 };
 
 function getProxyConfig(): AxiosProxyConfig | false {
@@ -135,42 +177,81 @@ export async function executeScrapeJob(params: ScrapeParams): Promise<{
     const tradeFlowCode = params.tradeFlow === "imports" ? "I" : "E";
     const apiUrl = "https://www.trademap.org/api/companies";
 
-    // Build query params matching TradeMap requirements
-    const queryParams: Record<string, string | number> = {
-      tradeFlow: tradeFlowCode,
-      country: resolvedCountryCode,
-      pageSize: params.limit || 20,
-      page: 1,
+    const customCookie = process.env.TRADEMAP_COOKIE;
+    const requestHeaders: Record<string, string> = {
+      "User-Agent": randomUserAgent,
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://www.trademap.org/",
+      "Accept-Language": "en-US,en;q=0.9",
     };
-
-    if (activeHsCode) {
-      queryParams.productType = "p";
-      queryParams.product = activeHsCode;
+    if (customCookie) {
+      requestHeaders["Cookie"] = customCookie;
+      logMessages.push("Using TradeMap authenticated session cookie.");
     }
 
-    logMessages.push(`Calling TradeMap live API: ${apiUrl}`);
-    logMessages.push(`Params: country=${resolvedCountryCode} (${countryName}), flow=${tradeFlowCode}, hs=${activeHsCode || "All"}`);
+    // Multi-query expansion to get 15-30+ companies even on guest limits
+    const targetCodes: string[] = [];
+    if (activeHsCode) {
+      targetCodes.push(activeHsCode);
+      const subcodes = COMMODITY_SUBCODES[activeHsCode];
+      if (subcodes) {
+        for (const sub of subcodes) {
+          if (!targetCodes.includes(sub)) targetCodes.push(sub);
+        }
+      } else if (/^[0-9]{4}$/.test(activeHsCode)) {
+        targetCodes.push(`${activeHsCode}10`, `${activeHsCode}20`, `${activeHsCode}90`);
+      }
+    } else {
+      targetCodes.push("0901", "1006", "0902", "5208", "6203", "3004", "7113", "7208");
+    }
 
-    const response = await axios.get(apiUrl, {
-      params: queryParams,
-      headers: {
-        "User-Agent": randomUserAgent,
-        Accept: "application/json, text/plain, */*",
-        Referer: "https://www.trademap.org/",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      proxy: proxyConfig,
-      timeout: 35000,
+    logMessages.push(`Multi-sector expansion: Querying ${targetCodes.length} HS sectors in parallel...`);
+
+    // Fetch in parallel across subcodes
+    const queryPromises = targetCodes.slice(0, 6).map(async (code) => {
+      try {
+        const queryParams: Record<string, string | number> = {
+          tradeFlow: tradeFlowCode,
+          country: resolvedCountryCode,
+          pageSize: 20,
+          page: 1,
+          productType: "p",
+          product: code,
+        };
+        const res = await axios.get(apiUrl, {
+          params: queryParams,
+          headers: requestHeaders,
+          proxy: proxyConfig,
+          timeout: 20000,
+        });
+        return { code, records: res.data?.records || [] };
+      } catch {
+        return { code, records: [] };
+      }
     });
 
-    if (response.data && Array.isArray(response.data.records)) {
-      const records: RawTradeMapRecord[] = response.data.records;
-      const totalAvailable = response.data.nbRecords || records.length;
-      logMessages.push(`TradeMap API Success: Found ${totalAvailable} total companies.`);
-      logMessages.push(`Fetching full profiles and contact info for ${records.length} companies...`);
+    const queryResults = await Promise.allSettled(queryPromises);
+    const seenIds = new Set<string>();
+    const allRecords: (RawTradeMapRecord & { hsCodeMatched?: string })[] = [];
 
-      // Fetch contacts in parallel for speed
-      const contactPromises = records.map(async (rec) => {
+    for (const qr of queryResults) {
+      if (qr.status === "fulfilled" && Array.isArray(qr.value.records)) {
+        for (const r of qr.value.records) {
+          const key = (r.id || r.name || "").toLowerCase().trim();
+          if (key && !seenIds.has(key)) {
+            seenIds.add(key);
+            allRecords.push({ ...r, hsCodeMatched: qr.value.code });
+          }
+        }
+      }
+    }
+
+    const records = allRecords;
+    logMessages.push(`TradeMap Multi-Query Success: Extracted ${records.length} distinct live companies.`);
+    logMessages.push(`Fetching full profiles and contact info for ${records.length} companies...`);
+
+    // Fetch contacts in parallel for speed
+    const contactPromises = records.map(async (rec) => {
         if (!rec.id || !rec.sourceId || !rec.publicAccessToken) return null;
         try {
           const contactRes = await axios.get(
@@ -181,6 +262,7 @@ export async function executeScrapeJob(params: ScrapeParams): Promise<{
                 Referer: "https://www.trademap.org/",
                 "X-Public-Companies-Token": rec.publicAccessToken,
                 Accept: "application/json, text/plain, */*",
+                ...(customCookie ? { Cookie: customCookie } : {}),
               },
               proxy: proxyConfig,
               timeout: 4000,
@@ -210,8 +292,10 @@ export async function executeScrapeJob(params: ScrapeParams): Promise<{
         const contact = rec.id ? contactMap.get(rec.id) : undefined;
 
         extracted.push({
+          trademapId: rec.id || undefined,
           name: rec.name.trim(),
           country: countryName,
+          countryCode: rec.countryCd || resolvedCountryCode,
           city: rec.city || undefined,
           address: rec.city ? `${rec.city}, ${countryName}` : countryName,
           phone: contact?.phone || undefined,
@@ -219,46 +303,56 @@ export async function executeScrapeJob(params: ScrapeParams): Promise<{
           contactRole: contact?.role || undefined,
           website: rec.website || undefined,
           sourceUrl: `https://www.trademap.org/companies/${rec.id || ""}`,
+          activities: tradeTypes,
+          annualTurnover: rec.annualTurnover ? String(rec.annualTurnover) : undefined,
+          numberOfEmployees: rec.numberOfEmployees ? String(rec.numberOfEmployees) : undefined,
+          updateDate: rec.updateDate || undefined,
+          sourceId: typeof rec.sourceId === 'number' ? rec.sourceId : undefined,
           hsCode: activeHsCode || undefined,
           productCategory: activeCategory || (activeHsCode ? `HS ${activeHsCode} Commodity Sector` : "General Merchandise"),
           tradeType: tradeTypes,
         });
       }
-    } else {
-      logMessages.push("TradeMap response did not contain records array.");
-    }
 
     // 2. Save extracted companies & products to database using relational upsert
     let savedCount = 0;
     for (const item of extracted) {
       if (!item.name) continue;
 
+      const whereCondition = item.trademapId
+        ? { trademapId: item.trademapId }
+        : {
+            name_country: {
+              name: item.name,
+              country: item.country || countryName,
+            },
+          };
+
+      const companyData = {
+        name: item.name,
+        country: item.country || countryName,
+        countryCode: item.countryCode,
+        city: item.city,
+        address: item.address,
+        phone: item.phone,
+        contactName: item.contactName,
+        contactRole: item.contactRole,
+        website: item.website,
+        sourceUrl: item.sourceUrl,
+        activities: item.activities,
+        annualTurnover: item.annualTurnover,
+        numberOfEmployees: item.numberOfEmployees,
+        updateDate: item.updateDate,
+        sourceId: item.sourceId,
+        tradeFlow: params.tradeFlow === "imports" ? "Importer" : "Exporter",
+      };
+
       const company = await prisma.company.upsert({
-        where: {
-          name_country: {
-            name: item.name,
-            country: item.country || countryName,
-          },
-        },
-        update: {
-          city: item.city,
-          address: item.address,
-          phone: item.phone,
-          contactName: item.contactName,
-          contactRole: item.contactRole,
-          website: item.website,
-          sourceUrl: item.sourceUrl,
-        },
+        where: whereCondition as any,
+        update: companyData,
         create: {
-          name: item.name,
-          country: item.country || countryName,
-          city: item.city,
-          address: item.address,
-          phone: item.phone,
-          contactName: item.contactName,
-          contactRole: item.contactRole,
-          website: item.website,
-          sourceUrl: item.sourceUrl,
+          trademapId: item.trademapId,
+          ...companyData,
         },
       });
 

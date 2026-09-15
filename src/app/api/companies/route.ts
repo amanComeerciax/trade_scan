@@ -18,17 +18,17 @@ export async function GET(request: Request) {
 
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { city: { contains: search, mode: "insensitive" } },
-        { address: { contains: search, mode: "insensitive" } },
-        { contactName: { contains: search, mode: "insensitive" } },
-        { phone: { contains: search, mode: "insensitive" } },
+        { name: { contains: search } },
+        { city: { contains: search } },
+        { address: { contains: search } },
+        { contactName: { contains: search } },
+        { phone: { contains: search } },
         {
           products: {
             some: {
               OR: [
-                { productCategory: { contains: search, mode: "insensitive" } },
-                { hsCode: { contains: search, mode: "insensitive" } },
+                { productCategory: { contains: search } },
+                { hsCode: { contains: search } },
               ],
             },
           },
@@ -43,8 +43,8 @@ export async function GET(request: Request) {
     if (hsCode || tradeType) {
       where.products = {
         some: {
-          ...(hsCode ? { hsCode: { startsWith: hsCode, mode: "insensitive" } } : {}),
-          ...(tradeType ? { tradeType: { contains: tradeType, mode: "insensitive" } } : {}),
+          ...(hsCode ? { hsCode: { startsWith: hsCode } } : {}),
+          ...(tradeType ? { tradeType: { contains: tradeType } } : {}),
         },
       };
     }
