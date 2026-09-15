@@ -175,12 +175,35 @@ interface RawCompanyItem {
   name?: string;
   city?: string;
   country?: string;
+  countryCode?: string;
   website?: string;
+  activities?: string;
+  annualTurnover?: string;
+  numberOfEmployees?: string;
+  updateDate?: string;
+  tradeFlow?: string;
   phone?: string;
   contactName?: string;
   contactRole?: string;
   address?: string;
   sourceUrl?: string;
+}
+
+async function extractAuthToken(page: any): Promise<string | null> {
+  return page.evaluate(() => {
+    let token = null;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      try {
+        const val = JSON.parse(localStorage.getItem(k || "") || "");
+        if (val?.authnResult?.access_token) { token = val.authnResult.access_token; break; }
+        if (val?.access_token) { token = val.access_token; break; }
+      } catch {}
+      const raw = localStorage.getItem(k || "");
+      if (typeof raw === "string" && raw.startsWith("eyJ")) { token = raw; break; }
+    }
+    return token;
+  }).catch(() => null);
 }
 
 /**
@@ -222,336 +245,193 @@ export async function scrapeTradeMapWithPlaywright(params: PlaywrightScrapeParam
     context = await getPersistentContext(true);
     const page = await context.newPage();
 
-    // 1. Intercept internal JSON network responses
-    page.on("response", async (response) => {
-      try {
-        const url = response.url();
-        if (url.includes("/companies") && response.status() === 200) {
-          const contentType = response.headers()["content-type"] || "";
-          if (contentType.includes("application/json")) {
-            const data = await response.json();
-            if (data && Array.isArray(data.records)) {
-              if (typeof data.nbRecords === "number" && data.nbRecords > 0) {
-                totalMarketAvailable = data.nbRecords;
-              }
-              for (const rec of data.records) {
-                if (rec.name && !capturedRecords.some((c) => c.name === rec.name)) {
-                  capturedRecords.push({
-                    id: rec.id,
-                    sourceId: rec.sourceId,
-                    name: rec.name,
-                    city: rec.city,
-                    country: countryName,
-                    website: rec.website,
-                    sourceUrl: url,
-                  });
-                }
-              }
-            }
-          }
-        }
-      } catch {
-        // ignore JSON parse errors for non-JSON responses
-      }
-    });
-
-    // 2. Navigate to TradeMap Goods Companies
-    const targetUrl = `https://www.trademap.org/en/goods/companies/c/${resolvedCountryCode}/${tradeFlow}/p/${activeHsCode || "ALL"}`;
+    // 1. Navigate to TradeMap Goods Companies
+    const targetUrl = `https://www.trademap.org/en/goods/companies/c/${resolvedCountryCode}/${tradeFlow}/p/${activeHsCode || "5208"}`;
     logMessages.push(`Navigating to ${targetUrl}...`);
 
-    await page.goto(targetUrl, { waitUntil: "networkidle", timeout: 45000 }).catch(async () => {
-      await page.waitForLoadState("domcontentloaded");
-    });
+    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await page.waitForTimeout(3000);
 
-    // Wait for TradeMap Angular SPA to load and stream the initial companies API response
-    logMessages.push("Waiting for TradeMap initial data stream...");
-    if (capturedRecords.length === 0) {
-      try {
-        await page.waitForResponse(
-          (res) => res.url().includes("/companies") && res.status() === 200,
-          { timeout: 15000 }
-        );
-        await page.waitForTimeout(1500);
-      } catch {
-        await page.waitForTimeout(3000);
-      }
+    // 2. Extract Bearer token from localStorage
+    const authToken = await extractAuthToken(page);
+    if (authToken) {
+      logMessages.push("🔑 Authenticated TradeMap session verified. Launching JSON API extraction engine...");
+    } else {
+      logMessages.push("ℹ️ Proceeding with authenticated browser session cookies...");
     }
 
-    logMessages.push(`Page loaded. Intercepted ${capturedRecords.length} companies from initial network stream.`);
-
-    // 3. Fallback: Scan rendered DOM cards only if network didn't intercept enough
-    if (capturedRecords.length < targetVolume) {
-      const domCompanies = await page.evaluate(() => {
-        const results: { name: string; city?: string; website?: string }[] = [];
-        const titles = document.querySelectorAll(".company-name, h3.company-title, a[href*='/companies/']");
-        const IGNORE_WORDS = ["companies", "company", "exporting companies", "importing companies", "trademap", "home", "back", "next", "previous", "view", "contact"];
-        titles.forEach((el) => {
-          const raw = el.textContent?.trim() || "";
-          const firstLine = raw.split("\n")[0].trim();
-          if (
-            firstLine &&
-            firstLine.length > 2 &&
-            firstLine.length < 80 &&
-            !IGNORE_WORDS.includes(firstLine.toLowerCase())
-          ) {
-            results.push({ name: firstLine });
-          }
-        });
-        return results;
-      });
-
-      for (const d of domCompanies) {
-        if (!capturedRecords.some((c) => c.name && c.name.toLowerCase() === d.name.toLowerCase())) {
-          capturedRecords.push({
-            name: d.name,
-            country: countryName,
-          });
-        }
-      }
-    }
-
-    // 4. Handle Multi-Page Auto-Pagination
+    // 3. Phase 1: High-Speed Direct JSON API Extraction Loop
+    const tradeFlowCode = tradeFlow === "imports" ? "I" : "E";
     let currentPage = 1;
-    const totalPages = totalMarketAvailable > 0 ? Math.ceil(totalMarketAvailable / 10) : 100;
-    const maxPages = Math.min(Math.ceil(targetVolume / 10), totalPages, 200);
-    let consecutiveFailures = 0;
+    let totalNbPages = 1;
 
-    while (capturedRecords.length < targetVolume && currentPage < maxPages) {
-      if (totalMarketAvailable > 0 && capturedRecords.length >= totalMarketAvailable) {
-        logMessages.push(`[Pagination] Extracted all ${capturedRecords.length} companies available in this TradeMap market.`);
+    while (capturedRecords.length < targetVolume && currentPage <= totalNbPages) {
+      logMessages.push(`[Phase 1 API] Querying page ${currentPage}/${totalNbPages}...`);
+
+      const apiResult = await page.evaluate(async ({ flow, product, country, pageNum, token }) => {
+        const url = `https://www.trademap.org/api/companies?tradeFlow=${flow}&product=${encodeURIComponent(product)}&productType=p&country=${country}&page=${pageNum}&size=100&sortBy=companyName&sortDir=asc`;
+        const headers: Record<string, string> = {
+          Accept: "application/json, text/plain, */*",
+          "X-Requested-With": "XMLHttpRequest",
+        };
+        if (token) {
+          headers["Authorization"] = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+        }
+        try {
+          const res = await fetch(url, { credentials: "include", headers });
+          if (!res.ok) return { ok: false, status: res.status };
+          const data = await res.json();
+          return { ok: true, data };
+        } catch (e: any) {
+          return { ok: false, error: e?.message || String(e) };
+        }
+      }, {
+        flow: tradeFlowCode,
+        product: activeHsCode || "5208",
+        country: resolvedCountryCode,
+        pageNum: currentPage,
+        token: authToken,
+      }).catch((e) => ({ ok: false, error: e.message }));
+
+      const anyResult = apiResult as any;
+      if (!anyResult || !anyResult.ok || !anyResult.data) {
+        logMessages.push(`[Phase 1 API] Page ${currentPage} request did not return data. Ending pagination.`);
         break;
       }
 
+      const data = anyResult.data;
+      if (typeof data.nbPages === "number" && data.nbPages > 0) totalNbPages = data.nbPages;
+      if (typeof data.nbRecords === "number") totalMarketAvailable = data.nbRecords;
+
+      const records = Array.isArray(data.records) ? data.records : [];
+      logMessages.push(`[Phase 1 API] Page ${currentPage}: Received ${records.length} companies.`);
+
+      if (records.length === 0) break;
+
+      for (const rec of records) {
+        if (rec.name && !capturedRecords.some((c) => (c.id && c.id === rec.id) || c.name === rec.name)) {
+          let activitiesStr: string | undefined = undefined;
+          if (Array.isArray(rec.activities) && rec.activities.length > 0) {
+            activitiesStr = rec.activities.join(", ");
+          }
+          capturedRecords.push({
+            id: rec.id ? String(rec.id) : undefined,
+            sourceId: rec.sourceId || 1,
+            name: rec.name,
+            city: rec.city,
+            country: countryName,
+            countryCode: rec.countryCd ? String(rec.countryCd) : resolvedCountryCode,
+            website: rec.website,
+            activities: activitiesStr,
+            annualTurnover: rec.annualTurnover ? String(rec.annualTurnover) : undefined,
+            numberOfEmployees: rec.numberOfEmployees ? String(rec.numberOfEmployees) : undefined,
+            updateDate: rec.updateDate ? String(rec.updateDate) : undefined,
+            tradeFlow: tradeFlowCode === "I" ? "Importer" : "Exporter",
+            sourceUrl: rec.id ? `https://www.trademap.org/companies/${rec.id}` : targetUrl,
+          });
+        }
+      }
+
+      if (capturedRecords.length >= targetVolume) break;
       currentPage++;
-      const prevCount = capturedRecords.length;
-      logMessages.push(`[Pagination] Loading Page ${currentPage}...`);
-
-      // Ensure paginator is scrolled into view
-      await page.evaluate(() => {
-        const paginator = document.querySelector('.paginator, .pages, [class*="paginat"], nav[aria-label*="page"]');
-        if (paginator) paginator.scrollIntoView({ behavior: 'instant', block: 'end' });
-      }).catch(() => {});
-      await page.waitForTimeout(500);
-
-      let clicked = false;
-
-      // Strategy 1: Click the "Next" (>) button — most reliable for sequential pagination
-      if (!clicked) {
-        try {
-          clicked = await page.evaluate(() => {
-            // Look for common "next page" button patterns
-            const allBtns = Array.from(document.querySelectorAll('button, a.page-link, [class*="page"] button, [class*="page"] a'));
-            const nextBtn = allBtns.find((b) => {
-              const txt = (b.textContent || '').trim();
-              const title = (b.getAttribute('title') || '').toLowerCase();
-              const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-              return (
-                txt === '>' || txt === '›' || txt === '»' || txt === '>>' ||
-                txt.toLowerCase() === 'next' ||
-                title.includes('next') || aria.includes('next') ||
-                b.classList.contains('next') ||
-                b.querySelector('span.next, i.next, .fa-chevron-right, .fa-angle-right') !== null
-              );
-            });
-            if (nextBtn && nextBtn instanceof HTMLElement && !nextBtn.hasAttribute('disabled')) {
-              nextBtn.click();
-              return true;
-            }
-            return false;
-          });
-        } catch {
-          clicked = false;
-        }
-      }
-
-      // Strategy 2: Click the sibling button right after the currently active one
-      if (!clicked) {
-        try {
-          clicked = await page.evaluate(() => {
-            const active = document.querySelector('.pages button.active, [class*="page"] button.active, button[aria-current="page"]');
-            if (active) {
-              let next = active.nextElementSibling;
-              // Skip over dots/ellipsis elements to find the next real page button
-              while (next && (next.textContent?.trim() === '...' || next.textContent?.trim() === '…')) {
-                next = next.nextElementSibling;
-              }
-              if (next && next instanceof HTMLElement && !next.hasAttribute('disabled')) {
-                next.click();
-                return true;
-              }
-            }
-            return false;
-          });
-        } catch {
-          clicked = false;
-        }
-      }
-
-      // Strategy 3: Try finding exact page number button in the DOM
-      if (!clicked) {
-        try {
-          clicked = await page.evaluate((targetPage) => {
-            const btns = Array.from(document.querySelectorAll('.pages button, [class*="page"] button, button'));
-            const targetBtn = btns.find((b) => {
-              const txt = b.textContent?.trim();
-              return txt === String(targetPage) && !b.hasAttribute('disabled');
-            });
-            if (targetBtn && targetBtn instanceof HTMLElement) {
-              targetBtn.click();
-              return true;
-            }
-            return false;
-          }, currentPage);
-        } catch {
-          clicked = false;
-        }
-      }
-
-      // Strategy 4: Click "..." (dots/ellipsis) button to expand more pages, then click the target number
-      if (!clicked) {
-        try {
-          const dotsClicked = await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll('button, a'));
-            const dots = btns.find((b) => {
-              const t = b.textContent?.trim();
-              return t === '...' || t === '…';
-            });
-            if (dots && dots instanceof HTMLElement) {
-              dots.click();
-              return true;
-            }
-            return false;
-          });
-          if (dotsClicked) {
-            await page.waitForTimeout(1000);
-            // Now try the exact page number again after dots expanded
-            clicked = await page.evaluate((targetPage) => {
-              const btns = Array.from(document.querySelectorAll('.pages button, [class*="page"] button, button'));
-              const targetBtn = btns.find((b) => b.textContent?.trim() === String(targetPage));
-              if (targetBtn && targetBtn instanceof HTMLElement) {
-                targetBtn.click();
-                return true;
-              }
-              // If specific number still not found, click next after active
-              const active = document.querySelector('.pages button.active, button.active');
-              const next = active?.nextElementSibling;
-              if (next && next instanceof HTMLElement && next.textContent?.trim() !== '...' && next.textContent?.trim() !== '…') {
-                next.click();
-                return true;
-              }
-              return false;
-            }, currentPage);
-          }
-        } catch {
-          clicked = false;
-        }
-      }
-
-      if (clicked) {
-        // Wait for api/companies network response (the interceptor will capture data automatically)
-        try {
-          await page.waitForResponse(
-            (res) => res.url().includes("api/companies") && res.status() === 200,
-            { timeout: 12000 }
-          );
-          // Grace period for data hydration
-          await page.waitForTimeout(1000);
-        } catch {
-          // If no network response captured, fall back to generous timeout
-          await page.waitForTimeout(4000);
-        }
-
-        const newCount = capturedRecords.length;
-        logMessages.push(`[Pagination] Page ${currentPage} loaded. Total captured so far: ${newCount}`);
-
-        // Track if we're not getting new data
-        if (newCount === prevCount) {
-          consecutiveFailures++;
-          logMessages.push(`[Pagination] Warning: No new records on page ${currentPage} (attempt ${consecutiveFailures}/5).`);
-          if (consecutiveFailures >= 5) {
-            logMessages.push(`[Pagination] Stopping after 5 consecutive empty pages.`);
-            break;
-          }
-        } else {
-          consecutiveFailures = 0;
-        }
-      } else {
-        logMessages.push(`[Pagination] Page control for ${currentPage} not reachable. Stopping at ${capturedRecords.length} records.`);
-        break;
-      }
+      await page.waitForTimeout(1000);
     }
 
-    // 5. Clean, Sanitize & Upsert into Prisma PostgreSQL (Phase 1)
+    // 4. Clean, Sanitize & Upsert into Prisma PostgreSQL (Phase 1) with fast concurrency
     let savedCount = 0;
     const sanitizedBatch = capturedRecords.slice(0, targetVolume);
     const savedCompanyIds: string[] = [];
 
-    for (const item of sanitizedBatch) {
-      const cleanName = item.name?.trim().replace(/\s+/g, " ") || "";
-      if (!cleanName) continue;
+    const batchSize = 5;
+    for (let i = 0; i < sanitizedBatch.length; i += batchSize) {
+      const chunk = sanitizedBatch.slice(i, i + batchSize);
+      const chunkResults = await Promise.all(
+        chunk.map(async (item) => {
+          const cleanName = item.name?.trim().replace(/\s+/g, " ") || "";
+          if (!cleanName) return null;
 
-      let cleanWebsite = item.website?.trim() || "";
-      if (cleanWebsite && !cleanWebsite.startsWith("http://") && !cleanWebsite.startsWith("https://")) {
-        cleanWebsite = `https://${cleanWebsite}`;
-      }
+          let cleanWebsite = item.website?.trim() || "";
+          if (cleanWebsite && !cleanWebsite.startsWith("http://") && !cleanWebsite.startsWith("https://")) {
+            cleanWebsite = `https://${cleanWebsite}`;
+          }
 
-      const externalIdValue = item.id ? `${item.id}|${item.sourceId || 1}` : null;
+          const externalIdValue = item.id ? `${item.id}|${item.sourceId || 1}` : null;
+          const trademapIdValue = item.id || null;
 
-      const company = await prisma.company.upsert({
-        where: {
-          name_country: {
-            name: cleanName,
-            country: countryName,
-          },
-        },
-        create: {
-          name: cleanName,
-          country: countryName,
-          city: item.city?.trim() || null,
-          address: item.address?.trim() || null,
-          phone: item.phone?.trim() || null,
-          contactName: item.contactName?.trim() || null,
-          contactRole: item.contactRole?.trim() || null,
-          website: cleanWebsite || null,
-          sourceUrl: item.sourceUrl || targetUrl,
-          externalId: externalIdValue,
-        },
-        update: {
-          city: item.city?.trim() || undefined,
-          address: item.address?.trim() || undefined,
-          phone: item.phone?.trim() || undefined,
-          contactName: item.contactName?.trim() || undefined,
-          contactRole: item.contactRole?.trim() || undefined,
-          website: cleanWebsite || undefined,
-          externalId: externalIdValue || undefined,
-        },
-      });
+          try {
+            const company = await prisma.company.upsert({
+              where: {
+                name_country: {
+                  name: cleanName,
+                  country: countryName,
+                },
+              },
+              create: {
+                name: cleanName,
+                country: countryName,
+                countryCode: item.countryCode || resolvedCountryCode,
+                city: item.city?.trim() || null,
+                address: item.address?.trim() || (item.city ? `${item.city}, ${countryName}` : countryName),
+                phone: item.phone?.trim() || null,
+                contactName: item.contactName?.trim() || null,
+                contactRole: item.contactRole?.trim() || null,
+                website: cleanWebsite || null,
+                sourceUrl: item.sourceUrl || targetUrl,
+                externalId: externalIdValue,
+                trademapId: trademapIdValue,
+                sourceId: item.sourceId || 1,
+                activities: item.activities || null,
+                annualTurnover: item.annualTurnover || null,
+                numberOfEmployees: item.numberOfEmployees || null,
+                updateDate: item.updateDate || null,
+                tradeFlow: item.tradeFlow || (tradeFlowCode === "I" ? "Importer" : "Exporter"),
+              },
+              update: {
+                city: item.city?.trim() || undefined,
+                website: cleanWebsite || undefined,
+                externalId: externalIdValue || undefined,
+                trademapId: trademapIdValue || undefined,
+                sourceId: item.sourceId || undefined,
+                activities: item.activities || undefined,
+              },
+            });
 
-      savedCompanyIds.push(company.id);
+            // Attach Product relation
+            if (activeCategory || activeHsCode) {
+              const existingProduct = await prisma.companyProduct.findFirst({
+                where: {
+                  companyId: company.id,
+                  hsCode: activeHsCode || null,
+                  productCategory: activeCategory || null,
+                },
+              });
 
-      // Attach Product relation
-      if (activeCategory || activeHsCode) {
-        const existingProduct = await prisma.companyProduct.findFirst({
-          where: {
-            companyId: company.id,
-            hsCode: activeHsCode || null,
-            productCategory: activeCategory || null,
-          },
-        });
+              if (!existingProduct) {
+                await prisma.companyProduct.create({
+                  data: {
+                    companyId: company.id,
+                    productCategory: activeCategory || "Traded Goods",
+                    hsCode: activeHsCode || null,
+                    tradeType: tradeFlow === "imports" ? "Importer" : "Exporter",
+                  },
+                }).catch(() => {});
+              }
+            }
 
-        if (!existingProduct) {
-          await prisma.companyProduct.create({
-            data: {
-              companyId: company.id,
-              productCategory: activeCategory || "Traded Goods",
-              hsCode: activeHsCode || null,
-              tradeType: tradeFlow === "imports" ? "Importer" : "Exporter",
-            },
-          });
+            return company.id;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      for (const id of chunkResults) {
+        if (id) {
+          savedCompanyIds.push(id);
+          savedCount++;
         }
       }
-
-      savedCount++;
     }
 
     const infoMsg = totalMarketAvailable > 0
@@ -679,19 +559,10 @@ export async function enrichTradeMapCompaniesWithPlaywright(params: PlaywrightEn
     await page.waitForTimeout(2000);
 
     // Extract Bearer token from localStorage
-    const authToken = await page.evaluate(() => {
-      try {
-        const raw = localStorage.getItem("0-TradeMap");
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        return parsed.authnResult?.access_token || parsed.authzData || null;
-      } catch {
-        return null;
-      }
-    });
+    const authToken = await extractAuthToken(page);
 
     if (!authToken) {
-      throw new Error("Could not retrieve active authentication token from TradeMap session. Please run login.");
+      throw new Error("Could not retrieve active authentication token from TradeMap session. Please ensure your TradeMap login is active.");
     }
 
     logMessages.push("TradeMap authorization token verified. Querying contact records...");

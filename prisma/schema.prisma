@@ -19,10 +19,18 @@ model Company {
   contactRole String?
   website     String?
   sourceUrl   String?
-  externalId  String?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  products    CompanyProduct[]
+  externalId        String?
+  trademapId        String?          @unique
+  countryCode       String?
+  activities        String?
+  annualTurnover    String?
+  numberOfEmployees String?
+  updateDate        String?
+  sourceId          Int?
+  tradeFlow         String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  products          CompanyProduct[]
 
   @@unique([name, country])
   @@index([country])
