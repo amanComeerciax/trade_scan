@@ -261,12 +261,13 @@ export async function scrapeTradeMapWithPlaywright(params: PlaywrightScrapeParam
       logMessages.push("ℹ️ Proceeding with authenticated browser session cookies...");
     }
 
-    // 3. Phase 1: High-Speed Direct JSON API Extraction Loop
+    // 3. Phase 1: High-Speed Direct JSON API Extraction Loop (Saves per 25-record page in real-time)
     const tradeFlowCode = tradeFlow === "imports" ? "I" : "E";
     let currentPage = 1;
     let totalNbPages = 1;
+    const savedCompanyIds: string[] = [];
 
-    while (capturedRecords.length < targetVolume && currentPage <= totalNbPages) {
+    while (savedCompanyIds.length < targetVolume && currentPage <= totalNbPages) {
       logMessages.push(`[Phase 1 API] Querying page ${currentPage}/${totalNbPages}...`);
 
       const apiResult = await page.evaluate(async ({ flow, product, country, pageNum, token }) => {
@@ -309,13 +310,14 @@ export async function scrapeTradeMapWithPlaywright(params: PlaywrightScrapeParam
 
       if (records.length === 0) break;
 
+      const pageBatch: RawCompanyItem[] = [];
       for (const rec of records) {
         if (rec.name && !capturedRecords.some((c) => (c.id && c.id === rec.id) || c.name === rec.name)) {
           let activitiesStr: string | undefined = undefined;
           if (Array.isArray(rec.activities) && rec.activities.length > 0) {
             activitiesStr = rec.activities.join(", ");
           }
-          capturedRecords.push({
+          const item: RawCompanyItem = {
             id: rec.id ? String(rec.id) : undefined,
             sourceId: rec.sourceId || 1,
             name: rec.name,
@@ -329,114 +331,128 @@ export async function scrapeTradeMapWithPlaywright(params: PlaywrightScrapeParam
             updateDate: rec.updateDate ? String(rec.updateDate) : undefined,
             tradeFlow: tradeFlowCode === "I" ? "Importer" : "Exporter",
             sourceUrl: rec.id ? `https://www.trademap.org/companies/${rec.id}` : targetUrl,
-          });
+          };
+          capturedRecords.push(item);
+          pageBatch.push(item);
         }
       }
 
-      if (capturedRecords.length >= targetVolume) break;
+      // Save each 25-record page into PostgreSQL DB immediately with live counter
+      if (pageBatch.length > 0) {
+        const remainingNeeded = targetVolume - savedCompanyIds.length;
+        const toSave = pageBatch.slice(0, remainingNeeded);
+
+        const batchSize = 5;
+        for (let i = 0; i < toSave.length; i += batchSize) {
+          const chunk = toSave.slice(i, i + batchSize);
+          const chunkResults = await Promise.all(
+            chunk.map(async (item) => {
+              const cleanName = item.name?.trim().replace(/\s+/g, " ") || "";
+              if (!cleanName) return null;
+
+              let cleanWebsite = item.website?.trim() || "";
+              if (cleanWebsite && !cleanWebsite.startsWith("http://") && !cleanWebsite.startsWith("https://")) {
+                cleanWebsite = `https://${cleanWebsite}`;
+              }
+
+              const externalIdValue = item.id ? `${item.id}|${item.sourceId || 1}` : null;
+              const trademapIdValue = item.id || null;
+
+              try {
+                const company = await prisma.company.upsert({
+                  where: {
+                    name_country: {
+                      name: cleanName,
+                      country: countryName,
+                    },
+                  },
+                  create: {
+                    name: cleanName,
+                    country: countryName,
+                    countryCode: item.countryCode || resolvedCountryCode,
+                    city: item.city?.trim() || null,
+                    address: item.address?.trim() || (item.city ? `${item.city}, ${countryName}` : countryName),
+                    phone: item.phone?.trim() || null,
+                    contactName: item.contactName?.trim() || null,
+                    contactRole: item.contactRole?.trim() || null,
+                    website: cleanWebsite || null,
+                    sourceUrl: item.sourceUrl || targetUrl,
+                    externalId: externalIdValue,
+                    trademapId: trademapIdValue,
+                    sourceId: item.sourceId || 1,
+                    activities: item.activities || null,
+                    annualTurnover: item.annualTurnover || null,
+                    numberOfEmployees: item.numberOfEmployees || null,
+                    updateDate: item.updateDate || null,
+                    tradeFlow: item.tradeFlow || (tradeFlowCode === "I" ? "Importer" : "Exporter"),
+                  },
+                  update: {
+                    city: item.city?.trim() || undefined,
+                    website: cleanWebsite || undefined,
+                    externalId: externalIdValue || undefined,
+                    trademapId: trademapIdValue || undefined,
+                    sourceId: item.sourceId || undefined,
+                    activities: item.activities || undefined,
+                  },
+                });
+
+                // Attach Product relation
+                if (activeCategory || activeHsCode) {
+                  const existingProduct = await prisma.companyProduct.findFirst({
+                    where: {
+                      companyId: company.id,
+                      hsCode: activeHsCode || null,
+                      productCategory: activeCategory || null,
+                    },
+                  });
+
+                  if (!existingProduct) {
+                    await prisma.companyProduct.create({
+                      data: {
+                        companyId: company.id,
+                        productCategory: activeCategory || "Traded Goods",
+                        hsCode: activeHsCode || null,
+                        tradeType: tradeFlow === "imports" ? "Importer" : "Exporter",
+                      },
+                    }).catch(() => {});
+                  }
+                }
+
+                return company.id;
+              } catch {
+                return null;
+              }
+            })
+          );
+
+          for (const id of chunkResults) {
+            if (id) savedCompanyIds.push(id);
+          }
+        }
+
+        logMessages.push(`[Phase 1 API] Page ${currentPage}: Saved ${toSave.length} companies to database. (Live Count: ${savedCompanyIds.length}/${targetVolume})`);
+
+        // Real-time update to ScrapeJob in DB for dashboard polling
+        await prisma.scrapeJob.update({
+          where: { id: job.id },
+          data: {
+            recordsFound: savedCompanyIds.length,
+            logs: logMessages.slice(-15).join("\n"),
+          },
+        }).catch(() => {});
+      }
+
+      if (records.length === 0 || savedCompanyIds.length >= targetVolume) break;
       currentPage++;
       await page.waitForTimeout(1000);
     }
 
-    // 4. Clean, Sanitize & Upsert into Prisma PostgreSQL (Phase 1) with fast concurrency
-    let savedCount = 0;
-    const sanitizedBatch = capturedRecords.slice(0, targetVolume);
-    const savedCompanyIds: string[] = [];
-
-    const batchSize = 5;
-    for (let i = 0; i < sanitizedBatch.length; i += batchSize) {
-      const chunk = sanitizedBatch.slice(i, i + batchSize);
-      const chunkResults = await Promise.all(
-        chunk.map(async (item) => {
-          const cleanName = item.name?.trim().replace(/\s+/g, " ") || "";
-          if (!cleanName) return null;
-
-          let cleanWebsite = item.website?.trim() || "";
-          if (cleanWebsite && !cleanWebsite.startsWith("http://") && !cleanWebsite.startsWith("https://")) {
-            cleanWebsite = `https://${cleanWebsite}`;
-          }
-
-          const externalIdValue = item.id ? `${item.id}|${item.sourceId || 1}` : null;
-          const trademapIdValue = item.id || null;
-
-          try {
-            const company = await prisma.company.upsert({
-              where: {
-                name_country: {
-                  name: cleanName,
-                  country: countryName,
-                },
-              },
-              create: {
-                name: cleanName,
-                country: countryName,
-                countryCode: item.countryCode || resolvedCountryCode,
-                city: item.city?.trim() || null,
-                address: item.address?.trim() || (item.city ? `${item.city}, ${countryName}` : countryName),
-                phone: item.phone?.trim() || null,
-                contactName: item.contactName?.trim() || null,
-                contactRole: item.contactRole?.trim() || null,
-                website: cleanWebsite || null,
-                sourceUrl: item.sourceUrl || targetUrl,
-                externalId: externalIdValue,
-                trademapId: trademapIdValue,
-                sourceId: item.sourceId || 1,
-                activities: item.activities || null,
-                annualTurnover: item.annualTurnover || null,
-                numberOfEmployees: item.numberOfEmployees || null,
-                updateDate: item.updateDate || null,
-                tradeFlow: item.tradeFlow || (tradeFlowCode === "I" ? "Importer" : "Exporter"),
-              },
-              update: {
-                city: item.city?.trim() || undefined,
-                website: cleanWebsite || undefined,
-                externalId: externalIdValue || undefined,
-                trademapId: trademapIdValue || undefined,
-                sourceId: item.sourceId || undefined,
-                activities: item.activities || undefined,
-              },
-            });
-
-            // Attach Product relation
-            if (activeCategory || activeHsCode) {
-              const existingProduct = await prisma.companyProduct.findFirst({
-                where: {
-                  companyId: company.id,
-                  hsCode: activeHsCode || null,
-                  productCategory: activeCategory || null,
-                },
-              });
-
-              if (!existingProduct) {
-                await prisma.companyProduct.create({
-                  data: {
-                    companyId: company.id,
-                    productCategory: activeCategory || "Traded Goods",
-                    hsCode: activeHsCode || null,
-                    tradeType: tradeFlow === "imports" ? "Importer" : "Exporter",
-                  },
-                }).catch(() => {});
-              }
-            }
-
-            return company.id;
-          } catch {
-            return null;
-          }
-        })
-      );
-
-      for (const id of chunkResults) {
-        if (id) {
-          savedCompanyIds.push(id);
-          savedCount++;
-        }
-      }
-    }
+    const savedCount = savedCompanyIds.length;
+    const sanitizedBatch = capturedRecords.slice(0, savedCount);
 
     const infoMsg = totalMarketAvailable > 0
-      ? `Phase 1 Complete: Extracted ${savedCount} profiles (out of ${totalMarketAvailable.toLocaleString()} total in TradeMap). Ready for Phase 2 enrichment.`
-      : `Phase 1 Complete: Extracted ${savedCount} profiles from TradeMap. Ready for Phase 2 enrichment.`;
+      ? `Phase 1 Complete: Extracted & saved ${savedCount} profiles (out of ${totalMarketAvailable.toLocaleString()} total in TradeMap). Ready for Phase 2 enrichment.`
+      : `Phase 1 Complete: Extracted & saved ${savedCount} profiles from TradeMap. Ready for Phase 2 enrichment.`;
 
     logMessages.push(infoMsg);
 
@@ -497,7 +513,7 @@ export interface PlaywrightEnrichParams {
  * Uses the authenticated TradeMap session to query the official Contact API.
  */
 export async function enrichTradeMapCompaniesWithPlaywright(params: PlaywrightEnrichParams = {}) {
-  const maxLimit = params.limit || 50;
+  const maxLimit = params.limit && params.limit > 0 ? params.limit : undefined;
 
   // 1. Query companies that have an externalId and are missing contact details
   const whereConditions: Prisma.CompanyWhereInput = {
@@ -518,7 +534,7 @@ export async function enrichTradeMapCompaniesWithPlaywright(params: PlaywrightEn
 
   const companiesToEnrich = await prisma.company.findMany({
     where: whereConditions,
-    take: maxLimit,
+    ...(maxLimit ? { take: maxLimit } : {}),
     orderBy: { updatedAt: "desc" },
   });
 
@@ -621,8 +637,8 @@ export async function enrichTradeMapCompaniesWithPlaywright(params: PlaywrightEn
         }
 
         // Brief delay between calls to be gentle to TradeMap
-        if ((i + 1) % 10 === 0) {
-          await page.waitForTimeout(300);
+        if ((i + 1) % 5 === 0 || i === companiesToEnrich.length - 1) {
+          await page.waitForTimeout(200);
           await prisma.scrapeJob.update({
             where: { id: job.id },
             data: {

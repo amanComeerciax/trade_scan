@@ -13,7 +13,7 @@ export async function POST(request: Request) {
       result = await enrichTradeMapCompaniesWithPlaywright({
         companyIds: Array.isArray(companyIds) && companyIds.length > 0 ? companyIds : undefined,
         country: country?.trim() || undefined,
-        limit: limit ? parseInt(limit, 10) : 50,
+        limit: limit ? parseInt(limit, 10) : undefined,
       });
     } else if (engine === "playwright") {
       result = await scrapeTradeMapWithPlaywright({

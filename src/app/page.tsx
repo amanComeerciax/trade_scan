@@ -323,6 +323,73 @@ export default function Dashboard() {
     };
   }, [search, selectedCountry, selectedTradeType]);
 
+  // Persistent live progress watcher: Reconnects floating progress bar even after page refresh
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    const syncActiveJob = async () => {
+      try {
+        const res = await fetch("/api/scrape");
+        const data = await res.json();
+        const activeJob = data.recentJobs?.find((j: any) => j.status === "RUNNING") || 
+          (data.recentJobs && data.recentJobs[0]?.status === "RUNNING" ? data.recentJobs[0] : null);
+
+        if (activeJob) {
+          const isPhase2 = activeJob.source?.includes("Phase 2") || activeJob.target?.includes("Phase 2");
+          const lastLog = activeJob.logs?.split("\n").filter(Boolean).pop() || "Extraction engine running...";
+
+          setFloatingProgress((prev) => ({
+            active: true,
+            phase: isPhase2 ? 2 : 1,
+            status: "running",
+            target: activeJob.target || prev?.target || "TradeMap Engine",
+            volume: prev?.volume || 1000,
+            message: lastLog,
+            records: activeJob.recordsFound || 0,
+            marketTotal: prev?.marketTotal,
+          }));
+
+          // Live refresh data & stats
+          fetchData();
+          fetchStats();
+        } else {
+          // If no running job, check if we were previously in running state
+          setFloatingProgress((prev) => {
+            if (prev && prev.status === "running") {
+              const latestJob = data.recentJobs?.[0];
+              if (latestJob?.status === "COMPLETED") {
+                if (prev.phase === 1) {
+                  setPhase1CompletedCount(latestJob.recordsFound || prev.records);
+                }
+                fetchData(1);
+                fetchStats();
+                return {
+                  ...prev,
+                  status: "completed",
+                  message: prev.phase === 2
+                    ? `✓ Phase 2 Complete! Enriched ${latestJob.recordsFound || prev.records} contact profiles.`
+                    : `✓ Phase 1 Complete! Saved ${latestJob.recordsFound || prev.records} profiles into database. Ready for Phase 2.`,
+                  records: latestJob.recordsFound || prev.records,
+                  canEnrich: true,
+                };
+              } else if (latestJob?.status === "CANCELLED" || latestJob?.status === "FAILED") {
+                setIsScraping(false);
+                setIsEnriching(false);
+                return null;
+              }
+            }
+            return prev;
+          });
+        }
+      } catch {}
+    };
+
+    syncActiveJob();
+    interval = setInterval(syncActiveJob, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   // Handle Phase 1: Directory Scraping (Company Names, Cities & Websites)
   const handleTriggerScrape = async () => {
     // 1. Immediately close the modal popup so user sees dashboard and table
@@ -361,9 +428,12 @@ export default function Dashboard() {
                 }
               : prev
           );
+          // Live refresh table & stats as 25-record batches arrive
+          fetchData();
+          fetchStats();
         }
       } catch {}
-    }, 1800);
+    }, 1500);
 
     try {
       const res = await fetch("/api/scrape", {
@@ -438,14 +508,15 @@ export default function Dashboard() {
   const handleTriggerEnrich = async (targetCountry?: string) => {
     setIsEnriching(true);
     const country = targetCountry || scrapeCountry;
+    const targetEnrichCount = stats.unenrichedCount || phase1CompletedCount || total || 1000;
 
     setFloatingProgress({
       active: true,
       phase: 2,
       status: "running",
-      target: `Phase 2: ${country} Contact Enrichment`,
-      volume: scrapeLimit,
-      message: "⚡ Connecting to TradeMap Contact API for Director Names & Direct Phone numbers...",
+      target: `Phase 2: ${country || "TradeMap"} Contact Enrichment`,
+      volume: targetEnrichCount,
+      message: `⚡ Connecting to TradeMap Contact API for ${targetEnrichCount} companies...`,
       records: 0,
     });
 
@@ -465,9 +536,11 @@ export default function Dashboard() {
                 }
               : prev
           );
+          // Live refresh table as contacts are enriched
+          fetchData();
         }
       } catch {}
-    }, 1200);
+    }, 1500);
 
     try {
       const res = await fetch("/api/scrape/enrich", {
@@ -475,7 +548,7 @@ export default function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           country: country || undefined,
-          limit: scrapeLimit || 50,
+          limit: targetEnrichCount,
         }),
       });
 
@@ -771,22 +844,31 @@ export default function Dashboard() {
 
           {/* Quota Progress Card */}
           <div className="quota-card">
-            <div className="quota-header">
-              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <Clock size={15} /> Records Scraped
-              </span>
-              <span>{Math.min(100, Math.round((total / 50) * 100))}%</span>
-            </div>
-            <div className="progress-bar-bg">
-              <div
-                className="progress-bar-fill"
-                style={{ width: `${Math.min(100, Math.max(10, Math.round((total / 50) * 100)))}%` }}
-              />
-            </div>
-            <div className="quota-labels">
-              <span>{total}</span>
-              <span>50 Target</span>
-            </div>
+            {(() => {
+              const targetGoal = floatingProgress?.volume || (total > 500 ? 1000 : 500);
+              const currentCount = floatingProgress?.records || total;
+              const percent = Math.min(100, Math.round((currentCount / targetGoal) * 100));
+              return (
+                <>
+                  <div className="quota-header">
+                    <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <Clock size={15} /> Records Scraped
+                    </span>
+                    <span>{percent}%</span>
+                  </div>
+                  <div className="progress-bar-bg">
+                    <div
+                      className="progress-bar-fill"
+                      style={{ width: `${Math.max(5, percent)}%` }}
+                    />
+                  </div>
+                  <div className="quota-labels">
+                    <span>{currentCount}</span>
+                    <span>{targetGoal} Target</span>
+                  </div>
+                </>
+              );
+            })()}
             <button
               onClick={() => setIsScraperModalOpen(true)}
               className="upgrade-btn"
