@@ -149,13 +149,39 @@ export function parsePromptWithAI(prompt: string): AIParsedQuery {
   };
 }
 
+const HS_NAMES_MAP: Record<string, string> = {
+  "0901": "Coffee & Spices",
+  "0902": "Tea & Maté",
+  "1006": "Rice & Grain Products",
+  "1001": "Wheat & Meslin",
+  "1701": "Sugar & Confectionery",
+  "5208": "Woven Cotton Fabrics",
+  "5205": "Cotton Yarn & Thread",
+  "6109": "T-Shirts & Knitted Wear",
+  "6203": "Garments & Apparel",
+  "6403": "Footwear & Leather Shoes",
+  "4107": "Finished Leather & Hides",
+  "7113": "Jewellery & Precious Articles",
+  "7108": "Gold & Bullion",
+  "7208": "Flat-rolled Iron & Steel",
+  "7601": "Aluminium & Alloys",
+  "8471": "Computers & Electronics",
+  "8517": "Smartphones & Telephones",
+  "8542": "Electronic Integrated Circuits",
+  "3004": "Pharmaceutical Medicaments",
+  "2905": "Industrial Chemicals",
+  "2710": "Petroleum Fuels & Oils",
+  "8703": "Motor Cars & Vehicles",
+};
+
 export function resolveCommodity(input?: string): { hsCode?: string; category?: string } {
   if (!input || !input.trim()) return {};
   const trimmed = input.trim().toLowerCase();
 
   // If already numeric (2 to 6 digits)
   if (/^[0-9]{2,6}$/.test(trimmed)) {
-    return { hsCode: trimmed, category: `HS ${trimmed} Commodity Group` };
+    const friendlyName = HS_NAMES_MAP[trimmed] || Object.values(COMMODITY_MAP).find(c => c.hs === trimmed)?.category;
+    return { hsCode: trimmed, category: friendlyName || `HS ${trimmed}` };
   }
 
   // Look up in COMMODITY_MAP

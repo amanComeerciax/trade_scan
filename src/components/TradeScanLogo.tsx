@@ -72,11 +72,12 @@ export function TradeScanLogo({ size = 28, showText = true, showBadge = true, cl
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <span
+              className="brand-title-text"
               style={{
                 fontSize: "15px",
                 fontWeight: 700,
                 letterSpacing: "-0.03em",
-                color: "#0f172a",
+                color: "var(--text-primary)",
                 lineHeight: "1.2",
               }}
             >
@@ -84,16 +85,14 @@ export function TradeScanLogo({ size = 28, showText = true, showBadge = true, cl
             </span>
             {showBadge && (
               <span
+                className="brand-badge-pro"
                 style={{
                   fontSize: "9px",
                   fontWeight: 700,
                   letterSpacing: "0.06em",
                   textTransform: "uppercase",
-                  color: "#2563eb",
-                  background: "#eff6ff",
                   padding: "1.5px 5px",
                   borderRadius: "4px",
-                  border: "1px solid #dbeafe",
                   lineHeight: "1.2",
                 }}
               >
@@ -102,11 +101,12 @@ export function TradeScanLogo({ size = 28, showText = true, showBadge = true, cl
             )}
           </div>
           <span
+            className="brand-subtitle-text"
             style={{
               fontSize: "10px",
               fontWeight: 500,
               letterSpacing: "0.02em",
-              color: "#64748b",
+              color: "var(--text-muted)",
               lineHeight: "1",
               marginTop: "2px",
             }}
