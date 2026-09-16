@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { resolveCommodity } from "@/lib/aiParser";
 import { TradeScanLogo, TradeScanMark } from "@/components/TradeScanLogo";
 import {
@@ -45,6 +45,7 @@ import {
   Trash2,
   AlertCircle,
   Pause,
+  Square,
 } from "lucide-react";
 
 interface FloatingScrapeState {
@@ -128,6 +129,7 @@ export default function Dashboard() {
   const [phase1CompletedCount, setPhase1CompletedCount] = useState<number | null>(null);
   const [scrapeLogs, setScrapeLogs] = useState<string>("");
   const [floatingProgress, setFloatingProgress] = useState<FloatingScrapeState | null>(null);
+  const enrichPollRef = useRef<NodeJS.Timeout | null>(null);
 
   // Continuous Auto-Pilot State (Sir's Requirement: "scraper rukna nahi chahiye")
   const [isAutoPilotActive, setIsAutoPilotActive] = useState(false);
@@ -323,16 +325,15 @@ export default function Dashboard() {
     };
   }, [search, selectedCountry, selectedTradeType]);
 
-  // Persistent live progress watcher: Reconnects floating progress bar even after page refresh
+  // Persistent live progress watcher: Reconnects floating progress bar on mount or when scraping/enriching
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: NodeJS.Timeout | null = null;
 
     const syncActiveJob = async () => {
       try {
-        const res = await fetch("/api/scrape");
+        const res = await fetch("/api/scrape?lite=true");
         const data = await res.json();
-        const activeJob = data.recentJobs?.find((j: any) => j.status === "RUNNING") || 
-          (data.recentJobs && data.recentJobs[0]?.status === "RUNNING" ? data.recentJobs[0] : null);
+        const activeJob = data.recentJobs?.find((j: any) => j.status === "RUNNING");
 
         if (activeJob) {
           const isPhase2 = activeJob.source?.includes("Phase 2") || activeJob.target?.includes("Phase 2");
@@ -348,12 +349,13 @@ export default function Dashboard() {
             records: activeJob.recordsFound || 0,
             marketTotal: prev?.marketTotal,
           }));
-
-          // Live refresh data & stats
-          fetchData();
-          fetchStats();
         } else {
-          // If no running job, check if we were previously in running state
+          // No job is running: Stop polling immediately!
+          if (interval) {
+            clearInterval(interval);
+            interval = null;
+          }
+
           setFloatingProgress((prev) => {
             if (prev && prev.status === "running") {
               const latestJob = data.recentJobs?.[0];
@@ -384,11 +386,15 @@ export default function Dashboard() {
       } catch {}
     };
 
-    syncActiveJob();
-    interval = setInterval(syncActiveJob, 2000);
+    // Only start polling if scraping or enriching is actively in progress
+    if (isScraping || isEnriching) {
+      interval = setInterval(syncActiveJob, 2500);
+    }
 
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isScraping, isEnriching]);
 
   // Handle Phase 1: Directory Scraping (Company Names, Cities & Websites)
   const handleTriggerScrape = async () => {
@@ -414,7 +420,7 @@ export default function Dashboard() {
     // 3. Poll latest live logs while extraction proceeds
     const pollTimer = setInterval(async () => {
       try {
-        const sRes = await fetch("/api/scrape");
+        const sRes = await fetch("/api/scrape?lite=true");
         const sData = await sRes.json();
         if (sData.recentJobs && sData.recentJobs[0]) {
           const currentJob = sData.recentJobs[0];
@@ -428,12 +434,9 @@ export default function Dashboard() {
                 }
               : prev
           );
-          // Live refresh table & stats as 25-record batches arrive
-          fetchData();
-          fetchStats();
         }
       } catch {}
-    }, 1500);
+    }, 2000);
 
     try {
       const res = await fetch("/api/scrape", {
@@ -504,6 +507,18 @@ export default function Dashboard() {
     }
   };
 
+  const handleStopEnrich = async () => {
+    try {
+      await fetch("/api/scrape/cancel", { method: "POST" });
+    } catch {}
+    setIsEnriching(false);
+    if (enrichPollRef.current) {
+      clearInterval(enrichPollRef.current);
+      enrichPollRef.current = null;
+    }
+    setFloatingProgress(null);
+  };
+
   // Handle Phase 2: Contact Enrichment (Director/MD Names, Roles & Direct Phones)
   const handleTriggerEnrich = async (targetCountry?: string) => {
     setIsEnriching(true);
@@ -514,15 +529,16 @@ export default function Dashboard() {
       active: true,
       phase: 2,
       status: "running",
-      target: `Phase 2: ${country || "TradeMap"} Contact Enrichment`,
+      target: `Phase 2: Contact Enrichment`,
       volume: targetEnrichCount,
       message: `⚡ Connecting to TradeMap Contact API for ${targetEnrichCount} companies...`,
       records: 0,
     });
 
-    const enrichPoll = setInterval(async () => {
+    if (enrichPollRef.current) clearInterval(enrichPollRef.current);
+    enrichPollRef.current = setInterval(async () => {
       try {
-        const sRes = await fetch("/api/scrape");
+        const sRes = await fetch("/api/scrape?lite=true");
         const sData = await sRes.json();
         if (sData.recentJobs && sData.recentJobs[0]) {
           const currentJob = sData.recentJobs[0];
@@ -536,24 +552,21 @@ export default function Dashboard() {
                 }
               : prev
           );
-          // Live refresh table as contacts are enriched
-          fetchData();
         }
       } catch {}
-    }, 1500);
+    }, 2000);
 
     try {
       const res = await fetch("/api/scrape/enrich", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          country: country || undefined,
           limit: targetEnrichCount,
         }),
       });
 
       const json = await res.json();
-      clearInterval(enrichPoll);
+      if (enrichPollRef.current) clearInterval(enrichPollRef.current);
 
       if (json.success) {
         const enriched = json.data?.enrichedCount ?? 0;
@@ -564,7 +577,7 @@ export default function Dashboard() {
           active: true,
           phase: 2,
           status: "completed",
-          target: `Phase 2: ${country} Contact Enrichment`,
+          target: `Phase 2: Contact Enrichment Complete`,
           volume: totalAttempted,
           message: successMsg,
           records: enriched,
@@ -584,7 +597,7 @@ export default function Dashboard() {
         });
       }
     } catch (err: unknown) {
-      clearInterval(enrichPoll);
+      if (enrichPollRef.current) clearInterval(enrichPollRef.current);
       const message = err instanceof Error ? err.message : "Network error";
       setFloatingProgress({
         active: true,
@@ -1157,22 +1170,22 @@ export default function Dashboard() {
 
               {((stats.unenrichedCount && stats.unenrichedCount > 0) || (phase1CompletedCount && phase1CompletedCount > 0)) ? (
                 <button
-                  onClick={() => handleTriggerEnrich()}
-                  disabled={isEnriching || isScraping}
+                  onClick={() => isEnriching ? handleStopEnrich() : handleTriggerEnrich()}
+                  disabled={isScraping}
                   className="action-btn"
                   style={{
-                    background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
+                    background: isEnriching ? "#dc2626" : "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
                     color: "#fff",
                     border: "none",
-                    boxShadow: "0 2px 8px rgba(99, 102, 241, 0.35)",
+                    boxShadow: isEnriching ? "0 2px 8px rgba(220, 38, 38, 0.35)" : "0 2px 8px rgba(99, 102, 241, 0.35)",
                     fontWeight: 600,
                   }}
-                  title="Enrich pending contact details (Director / MD names & direct phones)"
+                  title={isEnriching ? "Stop Phase 2 Enrichment" : "Enrich pending contact details (Director / MD names & direct phones)"}
                 >
                   {isEnriching ? (
                     <>
-                      <RefreshCw size={13} className="spin" />
-                      <span>Enriching Phase 2...</span>
+                      <Square size={13} fill="currentColor" />
+                      <span>Stop Phase 2</span>
                     </>
                   ) : (
                     <>
@@ -2183,7 +2196,10 @@ export default function Dashboard() {
               )}
             </div>
             <button
-              onClick={() => setFloatingProgress(null)}
+              onClick={() => {
+                setFloatingProgress(null);
+                if (enrichPollRef.current) clearInterval(enrichPollRef.current);
+              }}
               className="mini-icon-btn"
               style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
               title="Close progress card"

@@ -120,6 +120,21 @@ const COUNTRY_CODES: Record<string, string> = {
   om: "512",
 };
 
+let activeContext: BrowserContext | null = null;
+
+// Ensure Chromium closes if Node exits abruptly (fixes zombie lock issue)
+if (typeof process !== "undefined") {
+  const cleanup = () => {
+    if (activeContext) {
+      activeContext.close().catch(() => {});
+      activeContext = null;
+    }
+  };
+  process.on("exit", cleanup);
+  process.on("SIGINT", cleanup);
+  process.on("SIGTERM", cleanup);
+}
+
 /**
  * Launch Chromium with persistent profile directory
  */
@@ -141,6 +156,7 @@ export async function getPersistentContext(headless: boolean = true): Promise<Br
     ],
   });
 
+  activeContext = context;
   return context;
 }
 
@@ -271,7 +287,7 @@ export async function scrapeTradeMapWithPlaywright(params: PlaywrightScrapeParam
       logMessages.push(`[Phase 1 API] Querying page ${currentPage}/${totalNbPages}...`);
 
       const apiResult = await page.evaluate(async ({ flow, product, country, pageNum, token }) => {
-        const url = `https://www.trademap.org/api/companies?tradeFlow=${flow}&product=${encodeURIComponent(product)}&productType=p&country=${country}&page=${pageNum}&size=100&sortBy=companyName&sortDir=asc`;
+        const url = `https://www.trademap.org/api/companies?tradeFlow=${flow}&product=${encodeURIComponent(product)}&productType=p&country=${country}&page=${pageNum}&pageSize=100&sortBy=companyName&sortDir=asc`;
         const headers: Record<string, string> = {
           Accept: "application/json, text/plain, */*",
           "X-Requested-With": "XMLHttpRequest",
@@ -297,8 +313,29 @@ export async function scrapeTradeMapWithPlaywright(params: PlaywrightScrapeParam
 
       const anyResult = apiResult as any;
       if (!anyResult || !anyResult.ok || !anyResult.data) {
-        logMessages.push(`[Phase 1 API] Page ${currentPage} request did not return data. Ending pagination.`);
-        break;
+        const errorDetail = anyResult?.status ? `HTTP Status: ${anyResult.status}` : (anyResult?.error || "Unknown error");
+        logMessages.push(`[Phase 1 API] Page ${currentPage} request failed (${errorDetail}). Retrying once before ending pagination...`);
+        
+        // Wait and retry once
+        await page.waitForTimeout(3000);
+        const retryResult: any = await page.evaluate(async ({ flow, product, country, pageNum, token }) => {
+          const url = `https://www.trademap.org/api/companies?tradeFlow=${flow}&product=${encodeURIComponent(product)}&productType=p&country=${country}&page=${pageNum}&pageSize=100&sortBy=companyName&sortDir=asc`;
+          const headers: Record<string, string> = { Accept: "application/json, text/plain, */*", "X-Requested-With": "XMLHttpRequest" };
+          if (token) headers["Authorization"] = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+          try {
+            const res = await fetch(url, { credentials: "include", headers });
+            if (!res.ok) return { ok: false, status: res.status };
+            return { ok: true, data: await res.json() };
+          } catch (e: any) { return { ok: false, error: String(e) }; }
+        }, { flow: tradeFlowCode, product: activeHsCode || "5208", country: resolvedCountryCode, pageNum: currentPage, token: authToken }).catch(() => ({ ok: false }));
+
+        if (!retryResult || !retryResult.ok || !retryResult.data) {
+          logMessages.push(`[Phase 1 API] Page ${currentPage} retry failed. TradeMap stopped sending data (likely rate limit or end of results).`);
+          break;
+        } else {
+          logMessages.push(`[Phase 1 API] Retry successful for Page ${currentPage}!`);
+          Object.assign(anyResult, retryResult);
+        }
       }
 
       const data = anyResult.data;
@@ -513,6 +550,7 @@ export interface PlaywrightEnrichParams {
  * Uses the authenticated TradeMap session to query the official Contact API.
  */
 export async function enrichTradeMapCompaniesWithPlaywright(params: PlaywrightEnrichParams = {}) {
+  (global as any).cancelEnrichPhase2 = false;
   const maxLimit = params.limit && params.limit > 0 ? params.limit : undefined;
 
   // 1. Query companies that have an externalId and are missing contact details
@@ -584,6 +622,11 @@ export async function enrichTradeMapCompaniesWithPlaywright(params: PlaywrightEn
     logMessages.push("TradeMap authorization token verified. Querying contact records...");
 
     for (let i = 0; i < companiesToEnrich.length; i++) {
+      if ((global as any).cancelEnrichPhase2) {
+        logMessages.push("Phase 2 Enrichment cancelled by user.");
+        break;
+      }
+      
       const comp = companiesToEnrich[i];
       if (!comp.externalId) continue;
 

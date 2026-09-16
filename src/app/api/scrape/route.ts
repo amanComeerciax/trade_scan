@@ -47,8 +47,19 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const isLite = searchParams.get("lite") === "true";
+
+    if (isLite) {
+      const recentJobs = await prisma.scrapeJob.findMany({
+        orderBy: { startedAt: "desc" },
+        take: 3,
+      });
+      return NextResponse.json({ recentJobs });
+    }
+
     const [recentJobs, totalCompanies, totalProducts, countryCounts, unenrichedCount] =
       await Promise.all([
         prisma.scrapeJob.findMany({
