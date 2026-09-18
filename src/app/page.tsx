@@ -39,6 +39,8 @@ import {
   MapPin,
   CheckCircle2,
   Trash2,
+  Sparkles,
+  Plus,
 } from "lucide-react";
 
 interface CompanyProduct {
@@ -71,12 +73,71 @@ interface StatsData {
   hsList?: { hsCode: string; count: number }[];
 }
 
+export function getHsCommodityInfo(hsCode?: string | null) {
+  if (!hsCode) {
+    return { icon: "🌐", name: "All Commodities", category: "Global Trade Directory" };
+  }
+  const clean = hsCode.trim();
+  if (clean.startsWith("01")) {
+    return { icon: "🐎", name: "Live Animals", category: "Live horses, bovine, swine, sheep, goats & poultry" };
+  }
+  if (clean.startsWith("02")) {
+    return { icon: "🥩", name: "Meat & Edible Offal", category: "Fresh, chilled or frozen meat" };
+  }
+  if (clean.startsWith("03")) {
+    return { icon: "🐟", name: "Fish & Seafood", category: "Fish, crustaceans, molluscs & aquatic invertebrates" };
+  }
+  if (clean.startsWith("07")) {
+    return { icon: "🥦", name: "Edible Vegetables", category: "Fresh, chilled or preserved vegetables & roots" };
+  }
+  if (clean.startsWith("08")) {
+    return { icon: "🍎", name: "Edible Fruits & Nuts", category: "Fresh or dried citrus, melons, apples & edible fruits" };
+  }
+  if (clean.startsWith("0910")) {
+    return { icon: "🌶️", name: "Spices & Turmeric", category: "Ginger, saffron, turmeric, thyme, bay leaves, curry & spices" };
+  }
+  if (clean.startsWith("0902")) {
+    return { icon: "🍵", name: "Tea & Mate", category: "Black tea, green tea, mate & tea extracts" };
+  }
+  if (clean.startsWith("0901")) {
+    return { icon: "☕", name: "Coffee & Substitutes", category: "Coffee beans, roasted, decaffeinated & coffee husks" };
+  }
+  if (clean.startsWith("1006") || clean === "10") {
+    return { icon: "🌾", name: "Rice & Cereals", category: "Basmati, non-basmati rice, wheat & cereals" };
+  }
+  if (clean.startsWith("5208") || clean.startsWith("5209") || clean.startsWith("5205") || clean === "52") {
+    return { icon: "🧵", name: "Cotton & Textiles", category: "Woven fabrics of cotton, yarn & textiles" };
+  }
+  if (clean.startsWith("3004") || clean.startsWith("3003") || clean === "30") {
+    return { icon: "💊", name: "Pharma & Medicaments", category: "Formulations & therapeutic healthcare products" };
+  }
+  if (clean.startsWith("7113") || clean === "71") {
+    return { icon: "💎", name: "Jewellery & Gems", category: "Articles of jewellery, precious stones & metals" };
+  }
+  if (clean.startsWith("3102") || clean === "31") {
+    return { icon: "🌱", name: "Fertilizers & Urea", category: "Urea & nitrogenous mineral fertilizers" };
+  }
+  if (clean.startsWith("84")) {
+    return { icon: "⚙️", name: "Nuclear Reactors, Boilers & Machinery", category: "Mechanical appliances & parts thereof" };
+  }
+  if (clean.startsWith("85")) {
+    return { icon: "⚡", name: "Electrical Machinery & Electronics", category: "Electronics, sound recorders & television parts" };
+  }
+  if (clean.startsWith("87")) {
+    return { icon: "🚗", name: "Vehicles & Automotive", category: "Vehicles other than railway or tramway" };
+  }
+  return { icon: "📦", name: `HS Code ${clean}`, category: `HS ${clean} Merchandise Goods` };
+}
+
 export default function Dashboard() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [availableCountries, setAvailableCountries] = useState<string[]>([]);
+  const [availableHsCodes, setAvailableHsCodes] = useState<{ hsCode: string; productCategory: string; count: number }[]>([]);
+  const [withPhoneCount, setWithPhoneCount] = useState(0);
+  const [withContactCount, setWithContactCount] = useState(0);
   const [stats, setStats] = useState<StatsData>({
     totalCompanies: 0,
     totalProducts: 0,
@@ -88,6 +149,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [selectedCountry, setSelectedCountry] = useState("");
   const [selectedTradeType, setSelectedTradeType] = useState("");
+  const [selectedHsCode, setSelectedHsCode] = useState("");
 
   // Modals & Panels
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -100,11 +162,16 @@ export default function Dashboard() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Scraper Controller State
-  const [scrapeCountry, setScrapeCountry] = useState("India");
-  const [scrapeHsCode, setScrapeHsCode] = useState("Spices");
-  const [scrapeTradeFlow, setScrapeTradeFlow] = useState<"exports" | "imports">("exports");
+  const [scrapeCountry, setScrapeCountry] = useState("World");
+  const [scrapeCountryCode, setScrapeCountryCode] = useState("000");
+  const [scrapeHsCode, setScrapeHsCode] = useState("310210");
+  const [customHsInput, setCustomHsInput] = useState("310210");
+  const [scrapeTradeFlow, setScrapeTradeFlow] = useState<"exports" | "imports">("imports");
   const [isScraping, setIsScraping] = useState(false);
   const [scrapeLogs, setScrapeLogs] = useState<string>("");
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [activeJobRecords, setActiveJobRecords] = useState<number>(0);
+  const [isOpeningBrowser, setIsOpeningBrowser] = useState(false);
 
   // Selection & Deletion State
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -194,6 +261,7 @@ export default function Dashboard() {
         limit: "10",
         search,
         country: selectedCountry,
+        hsCode: selectedHsCode,
         tradeType: selectedTradeType,
       });
 
@@ -204,6 +272,9 @@ export default function Dashboard() {
         setTotal(data.total);
         setTotalPages(data.totalPages);
         if (data.countries) setAvailableCountries(data.countries);
+        if (data.hsList) setAvailableHsCodes(data.hsList);
+        if (data.withPhone !== undefined) setWithPhoneCount(data.withPhone);
+        if (data.withContact !== undefined) setWithContactCount(data.withContact);
       }
     } catch (err) {
       console.error("Error loading companies:", err);
@@ -233,6 +304,7 @@ export default function Dashboard() {
           limit: "10",
           search,
           country: selectedCountry,
+          hsCode: selectedHsCode,
           tradeType: selectedTradeType,
         });
 
@@ -252,6 +324,9 @@ export default function Dashboard() {
             setTotal(compData.total);
             setTotalPages(compData.totalPages);
             if (compData.countries) setAvailableCountries(compData.countries);
+            if (compData.hsList) setAvailableHsCodes(compData.hsList);
+            if (compData.withPhone !== undefined) setWithPhoneCount(compData.withPhone);
+            if (compData.withContact !== undefined) setWithContactCount(compData.withContact);
           }
           if (statsData.stats) {
             setStats(statsData.stats);
@@ -267,38 +342,95 @@ export default function Dashboard() {
     return () => {
       ignore = true;
     };
-  }, [search, selectedCountry, selectedTradeType]);
+  }, [search, selectedCountry, selectedHsCode, selectedTradeType]);
 
   // Handle Scraper Trigger
   const handleTriggerScrape = async () => {
     setIsScraping(true);
-    setScrapeLogs(`[${new Date().toLocaleTimeString()}] Calling TradeMap extraction engine...\nTarget: ${scrapeCountry} | HS: ${scrapeHsCode} | Flow: ${scrapeTradeFlow}`);
+    const finalHs = customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode || "310210";
+    const finalFlow = scrapeTradeFlow === "imports" ? "I" : "E";
+
+    setScrapeLogs(`[${new Date().toLocaleTimeString()}] 🚀 Launching Universal Background Engine on MongoDB Atlas...\nTarget: ${scrapeCountry} (${scrapeCountryCode}) | HS: ${finalHs} | Flow: ${scrapeTradeFlow.toUpperCase()}\nInitializing Playwright authenticated session...`);
 
     try {
-      const res = await fetch("/api/scrape", {
+      const res = await fetch("/api/scraper", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          country: scrapeCountry,
-          hsCode: scrapeHsCode,
-          tradeFlow: scrapeTradeFlow,
-          limit: 20,
+          countryCode: scrapeCountryCode,
+          countryName: scrapeCountry,
+          hsCode: finalHs,
+          tradeFlow: finalFlow,
         }),
       });
 
       const json = await res.json();
-      if (json.success) {
-        setScrapeLogs((prev) => `${prev}\n\n✓ SUCCESS: ${json.data.message}\nSaved ${json.data.recordsFound} trade company profiles.`);
-        fetchData(1);
-        fetchStats();
+      if (json.success && json.jobId) {
+        setActiveJobId(json.jobId);
+        setScrapeLogs((prev) => `${prev}\n✓ Background Engine Active (Job: ${json.jobId})\nStreaming live progress from MongoDB Atlas...`);
+
+        // Start real-time polling
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await fetch(`/api/scraper?jobId=${json.jobId}`);
+            const statusData = await statusRes.json();
+            if (statusData.job) {
+              if (statusData.job.logs) setScrapeLogs(statusData.job.logs);
+              if (statusData.job.recordsFound !== undefined) setActiveJobRecords(statusData.job.recordsFound);
+
+              fetchData(page);
+              fetchStats();
+
+              if (statusData.job.status === "COMPLETED" || statusData.job.status === "FAILED" || statusData.job.status === "CANCELLED") {
+                clearInterval(pollInterval);
+                setIsScraping(false);
+                fetchData(1);
+                fetchStats();
+              }
+            }
+          } catch {}
+        }, 2500);
       } else {
-        setScrapeLogs((prev) => `${prev}\n\n✗ FAILED: ${json.error}`);
+        setScrapeLogs((prev) => `${prev}\n\n✗ FAILED: ${json.error || "Could not launch job"}`);
+        setIsScraping(false);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Network error";
       setScrapeLogs((prev) => `${prev}\n\n✗ Network Error: ${message}`);
-    } finally {
       setIsScraping(false);
+    }
+  };
+
+  const handleStopScrape = async () => {
+    if (!confirm("Are you sure you want to stop the background scraper job?")) return;
+    try {
+      const res = await fetch("/api/scraper", { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setIsScraping(false);
+        setScrapeLogs((prev) => `${prev}\n\n🛑 Scraper job stopped safely by user.`);
+      }
+    } catch (err) {
+      console.error("Error stopping scraper:", err);
+    }
+  };
+
+  const handleOpenBrowserLogin = async () => {
+    setIsOpeningBrowser(true);
+    try {
+      const res = await fetch("/api/scraper", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "open-browser" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setScrapeLogs((prev) => `${prev}\n[${new Date().toLocaleTimeString()}] 🌐 Chrome opened on desktop. Check login status and close when done.`);
+      }
+    } catch (err) {
+      console.error("Error opening browser:", err);
+    } finally {
+      setIsOpeningBrowser(false);
     }
   };
 
@@ -347,17 +479,23 @@ export default function Dashboard() {
   }, []);
 
   // Export handlers
-  const handleExport = (format: "xlsx" | "csv") => {
+  const handleExport = (format: "xlsx" | "csv", overrideHsCode?: string, overrideCountry?: string) => {
+    const hs = overrideHsCode !== undefined ? overrideHsCode : selectedHsCode;
+    const cntry = overrideCountry !== undefined ? overrideCountry : selectedCountry;
     const query = new URLSearchParams({
       format,
       search,
-      country: selectedCountry,
+      country: cntry,
+      hsCode: hs,
       tradeType: selectedTradeType,
     });
     const downloadUrl = `/api/export?${query.toString()}`;
     const link = document.createElement("a");
     link.href = downloadUrl;
-    link.setAttribute("download", `trade_exporters.${format}`);
+    link.setAttribute(
+      "download",
+      `TradeScan_${hs ? `HS_${hs}_` : ""}${cntry && cntry !== "World" ? `${cntry}_` : ""}Exporters.${format}`
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -389,100 +527,144 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* User Workspace Dropdown */}
-        <div className="user-selector-btn">
-          <div className="user-selector-left">
-            <Globe size={16} style={{ color: "#2563eb" }} />
-            <span>Global Trade Hub</span>
+        {/* MongoDB Atlas Cloud Connection Status */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "10px 12px",
+            background: "#ffffff",
+            border: "1px solid #e2e8f0",
+            borderRadius: "10px",
+            marginBottom: "20px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", background: "#10b981", boxShadow: "0 0 8px rgba(16, 185, 129, 0.7)" }} />
+            <div>
+              <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "12px", lineHeight: 1.2 }}>MongoDB Atlas</div>
+              <div style={{ fontSize: "10px", color: "#64748b" }}>Cluster0 • tradescan</div>
+            </div>
           </div>
-          <ChevronDown size={14} style={{ color: "#94a3b8" }} />
+          <span style={{ fontSize: "10px", fontWeight: 700, background: "#dcfce7", color: "#166534", padding: "2px 7px", borderRadius: "10px" }}>
+            Active
+          </span>
         </div>
 
         {/* Navigation Sections */}
         <div className="nav-section">
-          <div className="nav-section-title">Build</div>
-          <a
-            href="#scraper"
-            onClick={(e) => {
-              e.preventDefault();
-              setIsScraperModalOpen(true);
-            }}
+          <div className="nav-section-title">Engine Tools</div>
+          <div
+            onClick={() => setIsScraperModalOpen(true)}
             className="nav-item"
-          >
-            <Compass size={16} />
-            <span>Scraper Engine</span>
-          </a>
-          <a
-            href="#live-extract"
-            onClick={(e) => {
-              e.preventDefault();
-              setIsScraperModalOpen(true);
+            style={{
+              cursor: "pointer",
+              background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+              color: "#ffffff",
+              fontWeight: 600,
+              boxShadow: "0 2px 6px rgba(15, 23, 42, 0.2)",
+              marginBottom: "6px",
             }}
-            className="nav-item"
           >
-            <Send size={16} />
-            <span>Live Extraction</span>
-          </a>
-        </div>
-
-        <div className="nav-section">
-          <div className="nav-section-title">Optimize</div>
-          <div className="nav-item">
-            <BarChart3 size={16} />
-            <span>HS Code Mapping</span>
+            <Play size={14} fill="currentColor" />
+            <span>🚀 Run Live Scraper</span>
           </div>
-          <div className="nav-item">
-            <SlidersHorizontal size={16} />
-            <span>Country Analytics</span>
+          <div
+            onClick={() => setIsAIModalOpen(true)}
+            className="nav-item"
+            style={{ cursor: "pointer" }}
+          >
+            <Sparkles size={14} style={{ color: "#8b5cf6" }} />
+            <span>Ask AI Intelligence</span>
+            <span style={{ marginLeft: "auto", fontSize: "10px", color: "#94a3b8", background: "#f1f5f9", padding: "1px 5px", borderRadius: "4px" }}>Ctrl+K</span>
           </div>
         </div>
 
-        <div className="nav-section">
-          <div className="nav-section-title">Review</div>
-          <div className="nav-item active">
-            <Building2 size={16} />
-            <span>Exporters Directory</span>
-          </div>
-          <div className="nav-item">
-            <GitBranch size={16} />
-            <span>Trade Flows</span>
-          </div>
-        </div>
-
-        {/* Sidebar Footer */}
-        <div className="sidebar-footer">
-          <div className="nav-item" style={{ padding: "4px 8px" }}>
-            <Settings size={16} />
-            <span>Settings</span>
-          </div>
-          <div className="nav-item" style={{ padding: "4px 8px" }}>
-            <HelpCircle size={16} />
-            <span>Help & Support</span>
-          </div>
-
-          {/* Quota Progress Card */}
-          <div className="quota-card">
-            <div className="quota-header">
-              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <Clock size={15} /> HS 0901 Coverage
-              </span>
-              <span style={{ color: "#16a34a", fontWeight: 700 }}>100%</span>
+        <div className="nav-section" style={{ flex: 1 }}>
+          <div className="nav-section-title">Commodity Directories</div>
+          <div
+            onClick={() => { setSelectedHsCode(""); setPage(1); }}
+            className={`nav-item ${selectedHsCode === "" ? "active" : ""}`}
+            style={{ cursor: "pointer", justifyContent: "space-between" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span>🌐</span>
+              <span>All Commodities</span>
             </div>
-            <div className="progress-bar-bg">
+            <span style={{ fontSize: "11px", fontWeight: 700, background: selectedHsCode === "" ? "#dbeafe" : "#f1f5f9", color: selectedHsCode === "" ? "#1e40af" : "#64748b", padding: "1px 7px", borderRadius: "10px" }}>
+              {stats.totalCompanies || total}
+            </span>
+          </div>
+
+          {availableHsCodes.map((h) => {
+            const info = getHsCommodityInfo(h.hsCode);
+            const isAct = selectedHsCode === h.hsCode;
+            return (
               <div
-                className="progress-bar-fill"
-                style={{ width: "100%", background: "#16a34a" }}
-              />
+                key={h.hsCode}
+                onClick={() => { setSelectedHsCode(h.hsCode); setPage(1); }}
+                className={`nav-item ${isAct ? "active" : ""}`}
+                style={{ cursor: "pointer", justifyContent: "space-between" }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden" }}>
+                  <span>{info.icon}</span>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "140px" }} title={`HS ${h.hsCode} — ${info.name}`}>
+                    HS {h.hsCode} — {info.name}
+                  </span>
+                </div>
+                <span style={{ fontSize: "11px", fontWeight: 700, background: isAct ? "#dcfce7" : "#f1f5f9", color: isAct ? "#15803d" : "#64748b", padding: "1px 7px", borderRadius: "10px" }}>
+                  {h.count}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Sidebar Footer Live DB Card */}
+        <div className="sidebar-footer">
+          <div
+            style={{
+              padding: "14px",
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "12px",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "#64748b" }}>Live Database</span>
+              <span style={{ fontSize: "10px", fontWeight: 700, background: "#dcfce7", color: "#166534", padding: "1px 6px", borderRadius: "8px" }}>🟢 Atlas Cloud</span>
             </div>
-            <div className="quota-labels">
-              <span style={{ fontWeight: 600, color: "#166534" }}>{total} Saved</span>
-              <span>896 TradeMap</span>
+            <div style={{ fontSize: "20px", fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>
+              {total.toLocaleString()} <span style={{ fontSize: "12px", fontWeight: 500, color: "#64748b" }}>Profiles</span>
+            </div>
+            <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
+              {withContactCount.toLocaleString()} Contacts • {withPhoneCount.toLocaleString()} Phones
             </div>
             <button
               onClick={() => setIsScraperModalOpen(true)}
-              className="upgrade-btn"
+              style={{
+                width: "100%",
+                marginTop: "12px",
+                padding: "8px 0",
+                fontSize: "12px",
+                fontWeight: 700,
+                color: "#ffffff",
+                background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "6px",
+                boxShadow: "0 2px 6px rgba(15, 23, 42, 0.15)",
+              }}
             >
-              Run New Scrape
+              <Plus size={13} />
+              Extract New HS Code
             </button>
           </div>
         </div>
@@ -491,374 +673,419 @@ export default function Dashboard() {
       {/* 2. Main Content Area */}
       <main className="main-wrapper">
         {/* Top Header */}
-        <div className="top-header">
-          <h1 className="page-title">Exporters Directory</h1>
-          <div className="top-header-right">
-            <button className="icon-btn" title="Toggle theme">
-              <Sun size={16} />
-            </button>
-            <button className="icon-btn" title="Notifications">
-              <Bell size={16} />
-            </button>
-            <div className="user-avatar" title="Account profile">
-              TS
+        <div className="top-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "14px" }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <h1 className="page-title" style={{ fontSize: "22px", fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>
+                {selectedHsCode ? `HS ${selectedHsCode} — ${getHsCommodityInfo(selectedHsCode).name}` : "TradeScan Intelligence Hub"}
+              </h1>
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  padding: "3px 10px",
+                  borderRadius: "20px",
+                  background: selectedHsCode ? "#dcfce7" : "#eff6ff",
+                  color: selectedHsCode ? "#15803d" : "#1d4ed8",
+                  border: selectedHsCode ? "1px solid #86efac" : "1px solid #bfdbfe",
+                }}
+              >
+                {selectedHsCode ? `${total} Exporters` : `${total.toLocaleString()} Verified Profiles`}
+              </span>
             </div>
+            <p style={{ fontSize: "13px", color: "#64748b", marginTop: "3px" }}>
+              {selectedHsCode
+                ? `Direct director contacts, verified phones, official websites, and trade flows for HS ${selectedHsCode}`
+                : "Real-time global trade intelligence directory with verified key decision makers & phone lines"}
+            </p>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button
+              onClick={() => setIsScraperModalOpen(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                height: "40px",
+                padding: "0 18px",
+                background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+                color: "#ffffff",
+                fontWeight: 700,
+                fontSize: "13px",
+                borderRadius: "10px",
+                border: "none",
+                cursor: "pointer",
+                boxShadow: "0 4px 14px rgba(15, 23, 42, 0.25)",
+              }}
+            >
+              <Play size={13} fill="currentColor" />
+              🚀 Run Live Scraper
+            </button>
+
+            <button
+              onClick={() => handleExport("xlsx")}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "7px",
+                height: "40px",
+                padding: "0 16px",
+                background: selectedHsCode ? "#16a34a" : "#ffffff",
+                color: selectedHsCode ? "#ffffff" : "#0f172a",
+                fontWeight: 700,
+                fontSize: "13px",
+                borderRadius: "10px",
+                border: selectedHsCode ? "none" : "1px solid #cbd5e1",
+                cursor: "pointer",
+                boxShadow: selectedHsCode ? "0 4px 12px rgba(22, 163, 74, 0.25)" : "0 1px 2px rgba(0,0,0,0.05)",
+              }}
+              title={selectedHsCode ? `Export only HS ${selectedHsCode} companies (.xlsx)` : "Export all companies (.xlsx)"}
+            >
+              <FileSpreadsheet size={15} style={{ color: selectedHsCode ? "#ffffff" : "#16a34a" }} />
+              {selectedHsCode ? `Export HS ${selectedHsCode} Excel` : "Export Excel"}
+            </button>
+
+            <button
+              onClick={() => handleExport("csv")}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                height: "40px",
+                padding: "0 14px",
+                background: "#ffffff",
+                color: "#475569",
+                fontWeight: 600,
+                fontSize: "13px",
+                borderRadius: "10px",
+                border: "1px solid #cbd5e1",
+                cursor: "pointer",
+              }}
+              title="Export CSV"
+            >
+              <Download size={14} />
+              CSV
+            </button>
           </div>
         </div>
 
         {/* Sub-header Bar */}
-        <div className="sub-header-bar">
-          <div
-            className="ask-pill"
-            onClick={() => setIsAIModalOpen(true)}
-            style={{ cursor: "pointer" }}
-            title="Open Natural Language Trade Intelligence (Ctrl+K)"
-          >
-            <Command size={13} style={{ color: "#2563eb" }} />
-            <span>Search Trade Intelligence</span>
-            <span className="kbd-shortcut">Ctrl+K</span>
-          </div>
-          <div className="events-indicator">
-            <Radio size={14} style={{ color: "#16a34a" }} />
-            <span>((•)) TradeMap Engine Live</span>
-          </div>
-        </div>
-
-        {/* 5 Metric Cards in a Row (Reflects REAL Trade Data) */}
-        <div className="metrics-row">
-          <div className="metric-card">
-            <div className="metric-left">
-              <span className="metric-title">
-                {search === "0901"
-                  ? "HS 0901 Exporters"
-                  : search === "5208"
-                  ? "HS 5208 Exporters"
-                  : "Total Exporters"}
-              </span>
-              <div className="metric-value-row">
-                <span className="metric-val">{total}</span>
-                <span
-                  className="metric-change"
-                  style={{
-                    background: search ? "#dcfce7" : "#eff6ff",
-                    color: search ? "#15803d" : "#1d4ed8",
-                    fontWeight: 700,
-                  }}
-                >
-                  {search ? "Filtered" : "↑ +24.3%"}
-                </span>
-              </div>
-              <span className="metric-sub">
-                {search === "0901"
-                  ? "Coffee & Substitutes (India)"
-                  : search === "5208"
-                  ? "Woven Cotton Fabrics"
-                  : "Verified profiles"}
-              </span>
-            </div>
-            <div className="metric-circle-icon">
-              <Building2 size={16} />
-            </div>
-          </div>
-
-          <div className="metric-card">
-            <div className="metric-left">
-              <span className="metric-title">Countries Covered</span>
-              <div className="metric-value-row">
-                <span className="metric-val">{stats.totalCountries}</span>
-                <span className="metric-change">↑ +67.2%</span>
-              </div>
-              <span className="metric-sub">Global markets</span>
-            </div>
-            <div className="metric-circle-icon">
-              <Globe size={16} />
-            </div>
-          </div>
-
-          <div
-            className="metric-card"
-            style={{
-              borderColor: search === "5208" ? "#c4b5fd" : "#86efac",
-              background:
-                search === "5208"
-                  ? "linear-gradient(180deg, #ffffff 0%, #f5f3ff 100%)"
-                  : "linear-gradient(180deg, #ffffff 0%, #f0fdf4 100%)",
-            }}
-          >
-            <div className="metric-left">
-              <span
-                className="metric-title"
-                style={{
-                  color: search === "5208" ? "#6d28d9" : "#166534",
-                  fontWeight: 700,
-                }}
-              >
-                {search === "5208" ? "HS 5208 Sector" : "HS 0901 Sector"}
-              </span>
-              <div className="metric-value-row">
-                <span
-                  className="metric-val"
-                  style={{ color: search === "5208" ? "#6d28d9" : "#15803d" }}
-                >
-                  {search === "5208" ? total : 892}
-                </span>
-                <span
-                  className="metric-change"
-                  style={{
-                    background: search === "5208" ? "#ede9fe" : "#dcfce7",
-                    color: search === "5208" ? "#6d28d9" : "#15803d",
-                    fontWeight: 700,
-                  }}
-                >
-                  {search === "5208" ? "Active" : "100% Saved"}
-                </span>
-              </div>
-              <span
-                className="metric-sub"
-                style={{ color: search === "5208" ? "#5b21b6" : "#166534" }}
-              >
-                {search === "5208" ? "Cotton Fabrics" : "Coffee & Substitutes"}
-              </span>
-            </div>
+        <div className="sub-header-bar" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div
-              className="metric-circle-icon"
-              style={{
-                background: search === "5208" ? "#ede9fe" : "#dcfce7",
-                color: search === "5208" ? "#6d28d9" : "#15803d",
-              }}
+              className="ask-pill"
+              onClick={() => setIsAIModalOpen(true)}
+              style={{ cursor: "pointer" }}
+              title="Open Natural Language Trade Intelligence (Ctrl+K)"
             >
-              <Package size={16} />
+              <Command size={13} style={{ color: "#2563eb" }} />
+              <span>Search Trade Intelligence</span>
+              <span className="kbd-shortcut">Ctrl+K</span>
             </div>
-          </div>
-
-          <div className="metric-card">
-            <div className="metric-left">
-              <span className="metric-title">Scraper Status</span>
-              <div className="metric-value-row">
-                <span className="metric-val" style={{ color: "#16a34a", fontSize: "18px" }}>
-                  100% Active
-                </span>
-              </div>
-              <span className="metric-sub">Direct API connected</span>
-            </div>
-            <div className="metric-circle-icon">
-              <CheckCircle size={16} />
-            </div>
-          </div>
-
-          <div className="metric-card">
-            <div className="metric-left">
-              <span className="metric-title">Verified Websites</span>
-              <div className="metric-value-row">
-                <span className="metric-val">{total}</span>
-                <span className="metric-change">↑ +37.5%</span>
-              </div>
-              <span className="metric-sub">Online company links</span>
-            </div>
-            <div className="metric-circle-icon">
-              <CheckCircle2 size={16} />
-            </div>
-          </div>
-        </div>
-
-        {/* Sector Live Coverage Ribbon (Dynamic based on selected HS Code) */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "12px",
-            background:
-              search === "5208"
-                ? "linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)"
-                : "linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)",
-            border: search === "5208" ? "1px solid #c4b5fd" : "1px solid #86efac",
-            borderRadius: "14px",
-            padding: "14px 20px",
-            marginBottom: "18px",
-            boxShadow:
-              search === "5208"
-                ? "0 1px 3px rgba(109, 40, 217, 0.08)"
-                : "0 1px 3px rgba(22, 163, 74, 0.08)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
             <div
+              className="events-indicator"
+              style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }}
+              title="Connected to MongoDB Atlas Cloud Cluster"
+            >
+              <Radio size={13} style={{ color: "#16a34a" }} />
+              <span>MongoDB Atlas 🟢 Connected</span>
+            </div>
+          </div>
+
+          {isScraping && (
+            <div
+              onClick={() => setIsScraperModalOpen(true)}
               style={{
-                width: "42px",
-                height: "42px",
-                borderRadius: "12px",
-                background: search === "5208" ? "#7c3aed" : "#16a34a",
-                color: "#fff",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                fontSize: "20px",
-                boxShadow:
-                  search === "5208"
-                    ? "0 2px 8px rgba(124, 58, 237, 0.3)"
-                    : "0 2px 8px rgba(22, 163, 74, 0.3)",
+                gap: "8px",
+                padding: "6px 14px",
+                background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
+                borderRadius: "20px",
+                color: "#38bdf8",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                border: "1px solid #334155",
               }}
             >
-              {search === "5208" ? "🧵" : "☕"}
+              <RefreshCw size={13} className="spin" style={{ color: "#38bdf8" }} />
+              <span>⚡ Background Extraction Active: +{activeJobRecords} Added (Click to View Terminal)</span>
             </div>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                <span
+          )}
+        </div>
+
+        {/* Dynamic HS Code Navigation Ribbon, Metrics, and Coverage Ribbon */}
+        {(() => {
+          const currentHsInfo = getHsCommodityInfo(selectedHsCode);
+          const contactPct = total > 0 ? Math.round((withContactCount / total) * 100) : 100;
+          const phonePct = total > 0 ? Math.round((withPhoneCount / total) * 100) : 0;
+
+          return (
+            <>
+              {/* HS Code Filter Navigation Bar */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "10px 16px",
+                  background: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "14px",
+                  marginBottom: "16px",
+                  overflowX: "auto",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#475569", fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap", marginRight: "4px" }}>
+                  <Package size={15} style={{ color: "#2563eb" }} />
+                  <span>HS Commodity View:</span>
+                </div>
+
+                <button
+                  onClick={() => { setSelectedHsCode(""); setPage(1); }}
                   style={{
-                    fontWeight: 800,
-                    fontSize: "15px",
-                    color: search === "5208" ? "#4c1d95" : "#14532d",
-                  }}
-                >
-                  {search === "5208"
-                    ? "HS Code 5208 — Woven Fabrics of Cotton"
-                    : search === "0901"
-                    ? "HS Code 0901 — Coffee, Coffee Substitutes & Concentrates"
-                    : "Multi-Commodity Global Trade Directory"}
-                </span>
-                <span
-                  style={{
-                    background: search === "5208" ? "#ede9fe" : "#dcfce7",
-                    color: search === "5208" ? "#6d28d9" : "#15803d",
-                    padding: "2px 10px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "6px 14px",
                     borderRadius: "20px",
                     fontSize: "12px",
-                    fontWeight: 700,
-                    border: search === "5208" ? "1px solid #c4b5fd" : "1px solid #86efac",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    border: selectedHsCode === "" ? "1.5px solid #2563eb" : "1px solid #e2e8f0",
+                    background: selectedHsCode === "" ? "#eff6ff" : "#ffffff",
+                    color: selectedHsCode === "" ? "#1d4ed8" : "#475569",
+                    transition: "all 0.15s ease",
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  India Origin (699)
-                </span>
-              </div>
-              <div
-                style={{
-                  fontSize: "13px",
-                  color: search === "5208" ? "#5b21b6" : "#166534",
-                  marginTop: "3px",
-                }}
-              >
-                {search === "5208"
-                  ? `TradeScan Database: ${total} Cotton Exporter Profiles Saved from TradeMap`
-                  : search === "0901"
-                  ? "TradeMap Official Database: 892 of 896 Exporter Profiles Saved (100% Full Dataset Completed)"
-                  : `Total Active Datasets: HS 0901 Coffee (892) & HS 5208 Cotton (${stats.totalCompanies - 892})`}
-              </div>
-            </div>
-          </div>
+                  <span>🌐</span>
+                  <span>All Commodities</span>
+                  <span style={{ fontSize: "11px", fontWeight: 700, background: selectedHsCode === "" ? "#dbeafe" : "#f1f5f9", padding: "1px 7px", borderRadius: "10px", color: selectedHsCode === "" ? "#1e40af" : "#64748b" }}>
+                    {stats.totalCompanies || total}
+                  </span>
+                </button>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-            <div style={{ textAlign: "right" }}>
-              <div
-                style={{
-                  fontSize: "11px",
-                  color: search === "5208" ? "#6d28d9" : "#15803d",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                }}
-              >
-                {search ? "Filtered Coverage" : "Grand Total"}
+                {availableHsCodes.map((h) => {
+                  const info = getHsCommodityInfo(h.hsCode);
+                  const isAct = selectedHsCode === h.hsCode;
+                  return (
+                    <button
+                      key={h.hsCode}
+                      onClick={() => { setSelectedHsCode(h.hsCode); setPage(1); }}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "7px",
+                        padding: "6px 14px",
+                        borderRadius: "20px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        border: isAct ? "1.5px solid #16a34a" : "1px solid #e2e8f0",
+                        background: isAct ? "#f0fdf4" : "#ffffff",
+                        color: isAct ? "#15803d" : "#334155",
+                        boxShadow: isAct ? "0 2px 6px rgba(22, 163, 74, 0.15)" : "none",
+                        transition: "all 0.15s ease",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <span>{info.icon}</span>
+                      <span>HS {h.hsCode} — {info.name}</span>
+                      <span style={{ fontSize: "11px", fontWeight: 700, background: isAct ? "#dcfce7" : "#f1f5f9", padding: "1px 7px", borderRadius: "10px", color: isAct ? "#166534" : "#64748b" }}>
+                        {h.count}
+                      </span>
+                      {isAct && (
+                        <span
+                          onClick={(e) => { e.stopPropagation(); setSelectedHsCode(""); setPage(1); }}
+                          style={{ marginLeft: "4px", color: "#15803d", fontWeight: 700, fontSize: "14px" }}
+                          title="Clear HS filter"
+                        >
+                          ×
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-              <div
-                style={{
-                  fontSize: "15px",
-                  fontWeight: 800,
-                  color: search === "5208" ? "#4c1d95" : "#14532d",
-                }}
-              >
-                {search === "0901" ? "892 / 896 Saved (100%)" : `${total} Profiles`}
+
+              {/* 5 Dynamic Metric Cards */}
+              <div className="metrics-row">
+                <div className="metric-card">
+                  <div className="metric-left">
+                    <span className="metric-title">
+                      {selectedHsCode ? `HS ${selectedHsCode} Exporters` : "Total Exporters"}
+                    </span>
+                    <div className="metric-value-row">
+                      <span className="metric-val">{total}</span>
+                      <span
+                        className="metric-change"
+                        style={{
+                          background: selectedHsCode ? "#dcfce7" : "#eff6ff",
+                          color: selectedHsCode ? "#15803d" : "#1d4ed8",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {selectedHsCode ? `HS ${selectedHsCode}` : "Total Active"}
+                      </span>
+                    </div>
+                    <span className="metric-sub">
+                      {selectedHsCode ? currentHsInfo.name : "Verified company profiles"}
+                    </span>
+                  </div>
+                  <div className="metric-circle-icon">
+                    <Building2 size={16} />
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-left">
+                    <span className="metric-title">Key Decision Makers</span>
+                    <div className="metric-value-row">
+                      <span className="metric-val">{withContactCount}</span>
+                      <span className="metric-change" style={{ background: "#dcfce7", color: "#15803d", fontWeight: 700 }}>
+                        {contactPct}% Coverage
+                      </span>
+                    </div>
+                    <span className="metric-sub">MDs, CEOs, Proprietors</span>
+                  </div>
+                  <div className="metric-circle-icon">
+                    <ShieldCheck size={16} />
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-left">
+                    <span className="metric-title">Direct Phone Numbers</span>
+                    <div className="metric-value-row">
+                      <span className="metric-val" style={{ color: "#2563eb" }}>{withPhoneCount}</span>
+                      <span className="metric-change" style={{ background: "#eff6ff", color: "#1d4ed8", fontWeight: 700 }}>
+                        {phonePct}% Available
+                      </span>
+                    </div>
+                    <span className="metric-sub">Direct contact phone lines</span>
+                  </div>
+                  <div className="metric-circle-icon">
+                    <CheckCircle size={16} />
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-left">
+                    <span className="metric-title">Origin Country</span>
+                    <div className="metric-value-row">
+                      <span className="metric-val" style={{ fontSize: "20px" }}>India</span>
+                      <span className="metric-change">ISO 699</span>
+                    </div>
+                    <span className="metric-sub">TradeMap Official Exporters</span>
+                  </div>
+                  <div className="metric-circle-icon">
+                    <Globe size={16} />
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-left">
+                    <span className="metric-title">Active Sector</span>
+                    <div className="metric-value-row">
+                      <span className="metric-val" style={{ color: "#059669", fontSize: "19px" }}>
+                        {selectedHsCode ? `HS ${selectedHsCode}` : "All Goods"}
+                      </span>
+                      <span className="metric-change" style={{ background: "#ecfdf5", color: "#059669", fontWeight: 700 }}>
+                        Live DB
+                      </span>
+                    </div>
+                    <span className="metric-sub">{currentHsInfo.name}</span>
+                  </div>
+                  <div className="metric-circle-icon" style={{ background: "#ecfdf5", color: "#059669" }}>
+                    <Package size={16} />
+                  </div>
+                </div>
               </div>
-            </div>
-            <div
-              style={{
-                background: search === "5208" ? "#7c3aed" : "#16a34a",
-                color: "#fff",
-                padding: "8px 18px",
-                borderRadius: "20px",
-                fontSize: "13px",
-                fontWeight: 700,
-                display: "flex",
-                alignItems: "center",
-                gap: "7px",
-                boxShadow:
-                  search === "5208"
-                    ? "0 2px 6px rgba(124, 58, 237, 0.25)"
-                    : "0 2px 6px rgba(22, 163, 74, 0.25)",
-              }}
-            >
-              <CheckCircle size={16} />
-              <span>{search === "0901" ? "Full Scrape Verified" : "Active Dataset"}</span>
-            </div>
-          </div>
-        </div>
+            </>
+          );
+        })()}
 
         {/* 3. Main Data Table Card */}
         <div className="table-card">
           {/* Card Toolbar */}
-          <div className="card-toolbar" style={{ flexWrap: "wrap", gap: "12px" }}>
-            <div className="search-input-wrapper">
-              <Search size={15} className="search-icon-inside" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search company, country, HS code..."
-                className="card-search-input"
-              />
-            </div>
+          <div className="card-toolbar" style={{ flexWrap: "wrap", gap: "12px", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: "280px" }}>
+              <div className="search-input-wrapper" style={{ flex: 1, maxWidth: "380px" }}>
+                <Search size={15} className="search-icon-inside" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by company, city, director, or phone..."
+                  className="card-search-input"
+                />
+              </div>
 
-            {/* Quick Commodity / HS Filter Pills */}
-            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-              <button
-                onClick={() => setSearch("")}
+              {/* Quick Country Dropdown */}
+              <select
+                value={selectedCountry}
+                onChange={(e) => { setSelectedCountry(e.target.value); setPage(1); }}
                 style={{
-                  padding: "6px 14px",
-                  borderRadius: "20px",
-                  fontSize: "12px",
-                  fontWeight: 600,
+                  height: "36px",
+                  padding: "0 10px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "13px",
+                  color: "#334155",
+                  background: "#ffffff",
                   cursor: "pointer",
-                  border: search === "" ? "1.5px solid #2563eb" : "1px solid #e2e8f0",
-                  background: search === "" ? "#eff6ff" : "#fff",
-                  color: search === "" ? "#1d4ed8" : "#64748b",
-                  transition: "all 0.15s ease"
                 }}
               >
-                All Commodities ({stats.totalCompanies})
-              </button>
-              <button
-                onClick={() => setSearch("0901")}
+                <option value="">🌍 All Markets</option>
+                {availableCountries.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+
+              {/* Trade Type Filter */}
+              <select
+                value={selectedTradeType}
+                onChange={(e) => { setSelectedTradeType(e.target.value); setPage(1); }}
                 style={{
-                  padding: "6px 14px",
-                  borderRadius: "20px",
-                  fontSize: "12px",
-                  fontWeight: 600,
+                  height: "36px",
+                  padding: "0 10px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "13px",
+                  color: "#334155",
+                  background: "#ffffff",
                   cursor: "pointer",
-                  border: search === "0901" ? "1.5px solid #16a34a" : "1px solid #e2e8f0",
-                  background: search === "0901" ? "#f0fdf4" : "#fff",
-                  color: search === "0901" ? "#15803d" : "#64748b",
-                  transition: "all 0.15s ease"
                 }}
               >
-                ☕ HS 0901 (892 Coffee Exporters)
-              </button>
-              <button
-                onClick={() => setSearch("5208")}
-                style={{
-                  padding: "6px 14px",
-                  borderRadius: "20px",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  border: search === "5208" ? "1.5px solid #7c3aed" : "1px solid #e2e8f0",
-                  background: search === "5208" ? "#f5f3ff" : "#fff",
-                  color: search === "5208" ? "#6d28d9" : "#64748b",
-                  transition: "all 0.15s ease"
-                }}
-              >
-                🧵 HS 5208 ({stats.totalCompanies > 892 ? `${stats.totalCompanies - 892} Cotton Fabrics` : "Cotton Fabrics"})
-              </button>
+                <option value="">All Flows</option>
+                <option value="Exporter">Exporters</option>
+                <option value="Importer">Importers</option>
+              </select>
+
+              {(search || selectedCountry || selectedTradeType) && (
+                <button
+                  onClick={() => { setSearch(""); setSelectedCountry(""); setSelectedTradeType(""); setPage(1); }}
+                  style={{
+                    height: "36px",
+                    padding: "0 10px",
+                    borderRadius: "8px",
+                    border: "1px solid #e2e8f0",
+                    background: "#f8fafc",
+                    color: "#64748b",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                  title="Reset search & dropdown filters"
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
 
             <div className="toolbar-actions">
@@ -899,19 +1126,25 @@ export default function Dashboard() {
               <button
                 onClick={() => handleExport("xlsx")}
                 className="action-btn"
-                title="Export Excel (.xlsx)"
+                title={selectedHsCode ? `Export only HS ${selectedHsCode} (${selectedCountry || 'All markets'})` : "Export all stored companies"}
+                style={{
+                  border: selectedHsCode ? "1.5px solid #16a34a" : undefined,
+                  background: selectedHsCode ? "#f0fdf4" : undefined,
+                  color: selectedHsCode ? "#15803d" : undefined,
+                  fontWeight: selectedHsCode ? 700 : undefined,
+                }}
               >
                 <FileSpreadsheet size={14} style={{ color: "#16a34a" }} />
-                <span>Export Excel</span>
+                <span>{selectedHsCode ? `Export HS ${selectedHsCode} Excel` : "Export Excel"}</span>
               </button>
 
               <button
                 onClick={() => handleExport("csv")}
                 className="action-btn"
-                title="Export CSV"
+                title={selectedHsCode ? `Export only HS ${selectedHsCode} as CSV` : "Export CSV"}
               >
                 <Download size={14} />
-                <span>CSV</span>
+                <span>{selectedHsCode ? `HS ${selectedHsCode} CSV` : "CSV"}</span>
               </button>
 
               {companies.length > 0 && (
@@ -943,12 +1176,12 @@ export default function Dashboard() {
                   />
                 </th>
                 <th style={{ width: "22%" }}>Company Name ↕</th>
-                <th style={{ width: "12%" }}>Country ↕</th>
-                <th style={{ width: "12%" }}>Trade Type ↕</th>
-                <th style={{ width: "10%" }}>HS Code ↕</th>
-                <th style={{ width: "23%" }}>Product Category / Sector ↕</th>
-                <th style={{ width: "12%" }}>Scraped Date ↕</th>
-                <th style={{ width: "8%", textAlign: "right" }}>Actions ↕</th>
+                <th style={{ width: "13%" }}>HS Code & Sector ↕</th>
+                <th style={{ width: "18%" }}>Contact Person & Role ↕</th>
+                <th style={{ width: "14%" }}>Phone Number ↕</th>
+                <th style={{ width: "10%" }}>Trade Flow ↕</th>
+                <th style={{ width: "11%" }}>Location ↕</th>
+                <th style={{ width: "9%", textAlign: "right" }}>Actions ↕</th>
               </tr>
             </thead>
             <tbody>
@@ -965,7 +1198,7 @@ export default function Dashboard() {
               ) : (
                 companies.map((company) => {
                   const primaryProduct = company.products[0];
-                  const { time, date } = formatDateTime(company.createdAt);
+                  const hsInfo = getHsCommodityInfo(primaryProduct?.hsCode);
                   const isExporter = primaryProduct?.tradeType !== "Importer";
                   const isSelected = selectedIds.includes(company.id);
 
@@ -981,15 +1214,94 @@ export default function Dashboard() {
                       </td>
                       <td>
                         <div className="cell-type">
-                          <Building2 size={15} className="type-icon" style={{ color: "#2563eb" }} />
-                          <span style={{ fontWeight: 600 }}>{company.name}</span>
+                          <Building2 size={15} className="type-icon" style={{ color: "#2563eb", flexShrink: 0 }} />
+                          <div>
+                            <span style={{ fontWeight: 600, display: "block" }}>{company.name}</span>
+                            {company.city && (
+                              <span style={{ fontSize: "11px", color: "#64748b" }}>{company.city}</span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td>
-                        <span style={{ display: "flex", alignItems: "center", gap: "5px", color: "#475569", fontWeight: 500 }}>
-                          <MapPin size={13} style={{ color: "#94a3b8" }} />
-                          {company.country || "Global"}
-                        </span>
+                        {primaryProduct?.hsCode ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                            <span
+                              onClick={() => { setSelectedHsCode(primaryProduct.hsCode || ""); setPage(1); }}
+                              style={{
+                                fontFamily: "var(--font-mono)",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                background: "#eff6ff",
+                                border: "1px solid #bfdbfe",
+                                padding: "2px 7px",
+                                borderRadius: "6px",
+                                color: "#1d4ed8",
+                                cursor: "pointer",
+                                width: "fit-content",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                              title={`Filter by HS ${primaryProduct.hsCode}`}
+                            >
+                              <span>{hsInfo.icon}</span> HS {primaryProduct.hsCode}
+                            </span>
+                            <span style={{ fontSize: "11px", color: "#64748b", maxWidth: "140px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {primaryProduct.productCategory?.replace(`HS ${primaryProduct.hsCode}`, '').trim() || hsInfo.name}
+                            </span>
+                          </div>
+                        ) : (
+                          <span style={{ color: "#94a3b8" }}>—</span>
+                        )}
+                      </td>
+                      <td>
+                        {company.contactName ? (
+                          <div>
+                            <span style={{ fontWeight: 600, color: "#0f172a", display: "flex", alignItems: "center", gap: "5px", fontSize: "12.5px" }}>
+                              <span style={{ fontSize: "13px" }}>👤</span> {company.contactName}
+                            </span>
+                            {company.contactRole && (
+                              <span style={{ fontSize: "11px", color: "#059669", background: "#ecfdf5", padding: "1px 6px", borderRadius: "4px", fontWeight: 500, display: "inline-block", marginTop: "2px" }}>
+                                {company.contactRole}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: "#94a3b8", fontSize: "12px" }}>Not listed</span>
+                        )}
+                      </td>
+                      <td>
+                        {company.phone ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            <a
+                              href={`tel:${company.phone}`}
+                              style={{
+                                color: "#2563eb",
+                                fontWeight: 600,
+                                fontSize: "12px",
+                                textDecoration: "none",
+                                fontFamily: "var(--font-mono)",
+                              }}
+                            >
+                              📞 {company.phone}
+                            </a>
+                            <button
+                              onClick={() => copyToClipboard(company.phone || "", `phone-${company.id}`)}
+                              className="mini-icon-btn"
+                              style={{ padding: "2px", width: "20px", height: "20px" }}
+                              title="Copy phone"
+                            >
+                              {copiedId === `phone-${company.id}` ? (
+                                <Check size={12} style={{ color: "#16a34a" }} />
+                              ) : (
+                                <Copy size={12} />
+                              )}
+                            </button>
+                          </div>
+                        ) : (
+                          <span style={{ color: "#94a3b8", fontSize: "12px" }}>—</span>
+                        )}
                       </td>
                       <td>
                         <span
@@ -1001,34 +1313,12 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td>
-                        {primaryProduct?.hsCode ? (
-                          <span
-                            style={{
-                              fontFamily: "var(--font-mono)",
-                              fontSize: "11px",
-                              fontWeight: 600,
-                              background: "#f1f5f9",
-                              padding: "2px 6px",
-                              borderRadius: "4px",
-                              color: "#0f172a",
-                            }}
-                          >
-                            HS {primaryProduct.hsCode}
+                        <span style={{ display: "flex", alignItems: "center", gap: "4px", color: "#475569", fontSize: "12px" }}>
+                          <MapPin size={13} style={{ color: "#94a3b8", flexShrink: 0 }} />
+                          <span style={{ maxWidth: "110px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {company.city ? `${company.city}, ` : ""}{company.country || "India"}
                           </span>
-                        ) : (
-                          <span style={{ color: "#94a3b8" }}>—</span>
-                        )}
-                      </td>
-                      <td style={{ color: "var(--text-primary)", fontSize: "12px", maxWidth: "240px" }}>
-                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {primaryProduct?.productCategory || "General Merchandise"}
-                        </div>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", flexDirection: "column" }}>
-                          <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)" }}>{time}</span>
-                          <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{date}</span>
-                        </div>
+                        </span>
                       </td>
                       <td>
                         <div className="row-actions">
@@ -1042,15 +1332,7 @@ export default function Dashboard() {
                             >
                               <ExternalLink size={14} />
                             </a>
-                          ) : (
-                            <button
-                              onClick={() => copyToClipboard(company.name, company.id)}
-                              className="mini-icon-btn"
-                              title="Copy company name"
-                            >
-                              {copiedId === company.id ? <Check size={14} style={{ color: "#16a34a" }} /> : <Copy size={14} />}
-                            </button>
-                          )}
+                          ) : null}
                           <button
                             onClick={() => setActiveCompany(company)}
                             className="mini-icon-btn"
@@ -1135,6 +1417,25 @@ export default function Dashboard() {
             </div>
 
             <div className="modal-form-group">
+              <label className="modal-label">Commodity / HS Code</label>
+              <select
+                value={selectedHsCode}
+                onChange={(e) => setSelectedHsCode(e.target.value)}
+                className="modal-select"
+              >
+                <option value="">All HS Codes / Commodities</option>
+                {availableHsCodes.map((h) => {
+                  const info = getHsCommodityInfo(h.hsCode);
+                  return (
+                    <option key={h.hsCode} value={h.hsCode}>
+                      {info.icon} HS {h.hsCode} — {info.name} ({h.count} companies)
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            <div className="modal-form-group">
               <label className="modal-label">Country Filter</label>
               <select
                 value={selectedCountry}
@@ -1168,6 +1469,7 @@ export default function Dashboard() {
                 onClick={() => {
                   setSelectedCountry("");
                   setSelectedTradeType("");
+                  setSelectedHsCode("");
                   setIsFilterModalOpen(false);
                 }}
                 className="action-btn"
@@ -1361,9 +1663,38 @@ export default function Dashboard() {
                   <Globe size={15} className="input-icon-left" />
                   <select
                     value={scrapeCountry}
-                    onChange={(e) => setScrapeCountry(e.target.value)}
+                    onChange={(e) => {
+                      setScrapeCountry(e.target.value);
+                      const codeMap: Record<string, string> = {
+                        World: "000",
+                        India: "699",
+                        Germany: "276",
+                        Vietnam: "704",
+                        "United States": "842",
+                        "United Arab Emirates": "784",
+                        China: "156",
+                        "United Kingdom": "826",
+                        Brazil: "076",
+                        Singapore: "702",
+                        France: "251",
+                        Italy: "381",
+                        Japan: "392",
+                        Canada: "124",
+                        Australia: "036",
+                        Turkey: "792",
+                        Indonesia: "360",
+                        Malaysia: "458",
+                        "South Korea": "410",
+                        Thailand: "764",
+                        Spain: "724",
+                        Netherlands: "528",
+                        "Saudi Arabia": "682",
+                      };
+                      setScrapeCountryCode(codeMap[e.target.value] || "000");
+                    }}
                     className="modal-select"
                   >
+                    <option value="World">🌍 World (All Global Markets - Code 000)</option>
                     <option value="India">🇮🇳 India (Top Global Exporter Hub)</option>
                     <option value="Germany">🇩🇪 Germany (European Commerce)</option>
                     <option value="Vietnam">🇻🇳 Vietnam (Southeast Asia)</option>
@@ -1391,17 +1722,21 @@ export default function Dashboard() {
                 {/* Quick Country Pills */}
                 <div className="quick-pill-container">
                   {[
-                    { label: "🇮🇳 India", val: "India" },
-                    { label: "🇩🇪 Germany", val: "Germany" },
-                    { label: "🇻🇳 Vietnam", val: "Vietnam" },
-                    { label: "🇺🇸 USA", val: "United States" },
-                    { label: "🇦🇪 UAE", val: "United Arab Emirates" },
-                    { label: "🇨🇳 China", val: "China" },
+                    { label: "🌍 World", val: "World", code: "000" },
+                    { label: "🇮🇳 India", val: "India", code: "699" },
+                    { label: "🇩🇪 Germany", val: "Germany", code: "276" },
+                    { label: "🇻🇳 Vietnam", val: "Vietnam", code: "704" },
+                    { label: "🇺🇸 USA", val: "United States", code: "842" },
+                    { label: "🇦🇪 UAE", val: "United Arab Emirates", code: "784" },
+                    { label: "🇨🇳 China", val: "China", code: "156" },
                   ].map((c) => (
                     <button
                       key={c.val}
                       type="button"
-                      onClick={() => setScrapeCountry(c.val)}
+                      onClick={() => {
+                        setScrapeCountry(c.val);
+                        setScrapeCountryCode(c.code);
+                      }}
                       className={`quick-pill ${scrapeCountry.toLowerCase() === c.val.toLowerCase() ? "active" : ""}`}
                     >
                       {c.label}
@@ -1410,97 +1745,57 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* 2. Goods / Commodity Dropdown */}
+              {/* 2. Custom HS Code Input & Commodities */}
               <div className="modal-form-group" style={{ marginBottom: "16px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                  <label className="modal-label" style={{ margin: 0 }}>Goods / Commodity</label>
+                  <label className="modal-label" style={{ margin: 0 }}>HS Code & Commodity Sector</label>
                   <span style={{ fontSize: "11px", color: "#2563eb", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
-                    <CheckCircle2 size={12} style={{ color: "#16a34a" }} /> Auto-Maps to HS Code
+                    <CheckCircle2 size={12} style={{ color: "#16a34a" }} /> Zero-Blank Guarantees
                   </span>
                 </div>
-                <div className="input-with-icon-wrapper">
-                  <Package size={15} className="input-icon-left" />
-                  <select
-                    value={scrapeHsCode}
-                    onChange={(e) => setScrapeHsCode(e.target.value)}
+
+                <div style={{ marginBottom: "8px" }}>
+                  <input
+                    type="text"
+                    placeholder="Type ANY 4 or 6 digit HS Code (e.g. 310210, 5208, 0902)..."
+                    value={customHsInput}
+                    onChange={(e) => {
+                      setCustomHsInput(e.target.value);
+                      setScrapeHsCode(e.target.value);
+                    }}
                     className="modal-select"
-                  >
-                    <option value="Spices">🌶️ Spices & Aromatics (HS 0901)</option>
-                    <option value="Rice">🌾 Rice & Grain Products (HS 1006)</option>
-                    <option value="Tea">🫖 Tea whether or not flavored (HS 0902)</option>
-                    <option value="Coffee">☕ Coffee & Maté (HS 0901)</option>
-                    <option value="Cotton">👕 Woven Fabrics of Cotton (HS 5208)</option>
-                    <option value="Yarn">🧵 Cotton Yarn & Thread (HS 5205)</option>
-                    <option value="Apparel">👔 Garments & Apparel (HS 6203)</option>
-                    <option value="Tshirt">🎽 T-Shirts & Knitted Wear (HS 6109)</option>
-                    <option value="Leather">👞 Leather & Finished Hides (HS 4107)</option>
-                    <option value="Footwear">👠 Footwear & Shoes (HS 6403)</option>
-                    <option value="Pharma">💊 Pharmaceuticals & Medicaments (HS 3004)</option>
-                    <option value="Chemical">🧪 Organic & Industrial Chemicals (HS 2905)</option>
-                    <option value="Wheat">🌾 Wheat & Meslin (HS 1001)</option>
-                    <option value="Sugar">🍬 Cane or Beet Sugar (HS 1701)</option>
-                    <option value="Jewellery">💎 Articles of Jewellery & Parts (HS 7113)</option>
-                    <option value="Gold">✨ Gold & Bullion (HS 7108)</option>
-                    <option value="Diamond">💠 Diamonds, worked or unworked (HS 7102)</option>
-                    <option value="Steel">🏗️ Flat-rolled Iron & Steel (HS 7208)</option>
-                    <option value="Aluminium">🔩 Unwrought Aluminium (HS 7601)</option>
-                    <option value="Copper">🥉 Refined Copper & Alloys (HS 7403)</option>
-                    <option value="Electronics">🔌 Electronic Integrated Circuits (HS 8542)</option>
-                    <option value="Mobile">📱 Smartphones & Telephones (HS 8517)</option>
-                    <option value="Computer">💻 Computers & Processing Units (HS 8471)</option>
-                    <option value="Ceramic">🧱 Ceramic Tiles & Paving (HS 6907)</option>
-                    <option value="Plastic">🧴 Polymers of Ethylene & Plastics (HS 3901)</option>
-                    <option value="Oil">🛢️ Petroleum Fuels & Oils (HS 2710)</option>
-                    <option value="Dairy">🥛 Milk & Dairy Products (HS 0401)</option>
-                    <option value="Meat">🥩 Meat of Bovine Animals (HS 0201)</option>
-                    <option value="">🌐 All Commodities (No Sector Filter)</option>
-                  </select>
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      color: "#0f172a",
+                      background: "#f8fafc",
+                      borderColor: "#93c5fd",
+                    }}
+                  />
                 </div>
 
-                {/* Dynamic Mapped Pill */}
-                {currentCommodityInfo.hsCode && (
-                  <div className="mapped-indicator-badge">
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <CheckCircle2 size={13} style={{ color: "#16a34a" }} />
-                      <span>
-                        <strong>HS {currentCommodityInfo.hsCode}</strong> • {currentCommodityInfo.category}
-                      </span>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: "10px",
-                        background: "#dcfce7",
-                        color: "#166534",
-                        padding: "1px 6px",
-                        borderRadius: "4px",
-                        fontWeight: 600,
-                      }}
-                    >
-                      Ready
-                    </span>
-                  </div>
-                )}
-
                 {/* Quick Commodity Pills */}
-                <div className="quick-pill-container" style={{ marginTop: "8px" }}>
+                <div className="quick-pill-container" style={{ marginTop: "6px" }}>
                   {[
-                    { label: "🌾 Rice", val: "Rice" },
-                    { label: "🫖 Tea", val: "Tea" },
-                    { label: "🌶️ Spices", val: "Spices" },
-                    { label: "👕 Cotton", val: "Cotton" },
-                    { label: "☕ Coffee", val: "Coffee" },
-                    { label: "👞 Leather", val: "Leather" },
-                    { label: "💊 Pharma", val: "Pharma" },
-                    { label: "💎 Jewelry", val: "Jewellery" },
-                    { label: "🏗️ Steel", val: "Steel" },
-                    { label: "🌐 All Goods", val: "" },
+                    { label: "🌱 Urea (310210)", hs: "310210" },
+                    { label: "🧵 Cotton (5208)", hs: "5208" },
+                    { label: "🫖 Tea (0902)", hs: "0902" },
+                    { label: "🌶️ Spices (0910)", hs: "0910" },
+                    { label: "🌾 Rice (1006)", hs: "1006" },
+                    { label: "☕ Coffee (0901)", hs: "0901" },
+                    { label: "💊 Pharma (3004)", hs: "3004" },
+                    { label: "🏗️ Steel (7208)", hs: "7208" },
                   ].map((g) => {
-                    const isAct = g.val === "" ? !scrapeHsCode.trim() : scrapeHsCode.toLowerCase().includes(g.val.toLowerCase());
+                    const isAct = customHsInput.trim() === g.hs;
                     return (
                       <button
-                        key={g.label}
+                        key={g.hs}
                         type="button"
-                        onClick={() => setScrapeHsCode(g.val)}
+                        onClick={() => {
+                          setCustomHsInput(g.hs);
+                          setScrapeHsCode(g.hs);
+                        }}
                         className={`quick-pill ${isAct ? "active" : ""}`}
                       >
                         {g.label}
@@ -1517,93 +1812,248 @@ export default function Dashboard() {
                   value={scrapeTradeFlow}
                   onChange={(e) => setScrapeTradeFlow(e.target.value as "exports" | "imports")}
                   className="modal-select"
+                  style={{ fontWeight: 600 }}
                 >
-                  <option value="exports">↗ Exporters / Suppliers</option>
-                  <option value="imports">↙ Importers / Buyers</option>
+                  <option value="imports">↙ Importers / Buyers (Code I)</option>
+                  <option value="exports">↗ Exporters / Suppliers (Code E)</option>
                 </select>
               </div>
 
-              {/* 4. Verified Data Guarantee Info Callout */}
+              {/* 3b. TradeMap Session Status & One-Click Browser Verification */}
               <div
                 style={{
                   display: "flex",
-                  alignItems: "flex-start",
+                  alignItems: "center",
+                  justifyContent: "space-between",
                   gap: "10px",
-                  padding: "10px 12px",
+                  padding: "10px 14px",
                   background: "#f8fafc",
                   border: "1px solid #e2e8f0",
+                  borderRadius: "10px",
+                  marginBottom: "14px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Globe size={15} style={{ color: "#2563eb" }} />
+                  <div style={{ fontSize: "12px", color: "#1e293b", fontWeight: 500 }}>
+                    <strong>TradeMap Profile:</strong> Persistent Session
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenBrowserLogin}
+                  disabled={isOpeningBrowser}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    padding: "5px 12px",
+                    background: "#eff6ff",
+                    color: "#1d4ed8",
+                    border: "1px solid #bfdbfe",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                  }}
+                  title="Opens TradeMap in Chrome to verify login or sign in"
+                >
+                  <ExternalLink size={12} />
+                  {isOpeningBrowser ? "Opening Chrome..." : "Verify / Open Login"}
+                </button>
+              </div>
+
+              {/* 4. MongoDB Atlas Database Banner */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "10px",
+                  padding: "10px 14px",
+                  background: "#f0fdf4",
+                  border: "1px solid #bbf7d0",
                   borderRadius: "10px",
                   marginBottom: "16px",
                 }}
               >
-                <ShieldCheck size={16} style={{ color: "#16a34a", marginTop: "2px", flexShrink: 0 }} />
-                <div style={{ fontSize: "11.5px", color: "#475569", lineHeight: "1.45" }}>
-                  <strong style={{ color: "#0f172a" }}>Verified Profiles:</strong> Extracts Official Company Name, City, Website Link, Executive Director/MD & Direct Phone Number.
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <ShieldCheck size={16} style={{ color: "#16a34a" }} />
+                  <span style={{ fontSize: "12px", color: "#166534", fontWeight: 600 }}>
+                    Target Database: MongoDB Atlas Cloud (tradescan)
+                  </span>
                 </div>
+                <span style={{ fontSize: "11px", background: "#dcfce7", color: "#15803d", padding: "2px 8px", borderRadius: "12px", fontWeight: 700 }}>
+                  Active 🟢
+                </span>
               </div>
 
-              {/* 5. Logs Console */}
+              {/* 5. Live Logs Console */}
               {scrapeLogs && (
                 <div
                   style={{
-                    background: "#0f172a",
-                    color: "#93c5fd",
+                    background: "#020617",
+                    color: "#38bdf8",
                     borderRadius: "10px",
-                    padding: "12px",
-                    fontSize: "11px",
+                    padding: "14px",
+                    fontSize: "11.5px",
                     fontFamily: "var(--font-mono)",
-                    maxHeight: "100px",
+                    maxHeight: "150px",
                     overflowY: "auto",
                     marginBottom: "16px",
                     whiteSpace: "pre-wrap",
                     border: "1px solid #1e293b",
+                    boxShadow: "inset 0 2px 4px rgba(0,0,0,0.5)",
+                    lineHeight: "1.5",
                   }}
                 >
                   {scrapeLogs}
                 </div>
               )}
 
+              {/* Direct Excel Download for this Specific Scrape */}
+              {scrapeLogs && (scrapeLogs.includes("JOB COMPLETE") || scrapeLogs.includes("Done]")) && (
+                <div
+                  style={{
+                    marginBottom: "16px",
+                    padding: "14px 16px",
+                    background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)",
+                    borderRadius: "12px",
+                    border: "1.5px solid #22c55e",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "10px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700, color: "#15803d", fontSize: "14px", display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span>📊</span>
+                      <span>Separate Excel Ready (No Mixing)!</span>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#166534", marginTop: "2px" }}>
+                      Download only this commodity (HS {customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode}) without mixing with other databases.
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      onClick={() => {
+                        const finalHs = customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode || "310210";
+                        handleExport("xlsx", finalHs, scrapeCountry);
+                      }}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        background: "#16a34a",
+                        color: "#ffffff",
+                        fontWeight: 700,
+                        fontSize: "13px",
+                        padding: "8px 16px",
+                        borderRadius: "8px",
+                        border: "none",
+                        cursor: "pointer",
+                        boxShadow: "0 2px 8px rgba(22, 163, 74, 0.3)",
+                      }}
+                    >
+                      <FileSpreadsheet size={15} />
+                      Download HS {customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode} Excel
+                    </button>
+                    <button
+                      onClick={() => {
+                        const finalHs = customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode || "310210";
+                        handleExport("csv", finalHs, scrapeCountry);
+                      }}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        background: "#ffffff",
+                        color: "#15803d",
+                        fontWeight: 700,
+                        fontSize: "13px",
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid #86efac",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Download size={14} />
+                      CSV
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* 6. Modal Footer Action Buttons */}
               <div style={{ display: "flex", gap: "10px" }}>
-                <button
-                  onClick={() => setIsScraperModalOpen(false)}
-                  className="action-btn"
-                  style={{
-                    flex: 1,
-                    height: "42px",
-                    justifyContent: "center",
-                    borderRadius: "10px",
-                    fontWeight: 600,
-                  }}
-                >
-                  Close
-                </button>
-                <button
-                  onClick={handleTriggerScrape}
-                  disabled={isScraping}
-                  className="action-btn primary"
-                  style={{
-                    flex: 1.6,
-                    height: "42px",
-                    justifyContent: "center",
-                    borderRadius: "10px",
-                    fontWeight: 600,
-                    background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
-                    boxShadow: "0 4px 12px rgba(15, 23, 42, 0.18)",
-                  }}
-                >
-                  {isScraping ? (
-                    <>
+                {isScraping ? (
+                  <>
+                    <button
+                      onClick={handleStopScrape}
+                      className="action-btn"
+                      style={{
+                        flex: 1,
+                        height: "44px",
+                        background: "#fee2e2",
+                        color: "#991b1b",
+                        border: "1px solid #fecaca",
+                        fontWeight: 700,
+                        borderRadius: "10px",
+                      }}
+                    >
+                      🛑 Stop Extraction
+                    </button>
+                    <button
+                      disabled
+                      className="action-btn primary"
+                      style={{
+                        flex: 1.6,
+                        height: "44px",
+                        justifyContent: "center",
+                        borderRadius: "10px",
+                        fontWeight: 600,
+                        background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
+                      }}
+                    >
                       <RefreshCw size={15} className="spin" />
-                      Extracting Live TradeMap...
-                    </>
-                  ) : (
-                    <>
+                      Running... (+{activeJobRecords} Added)
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setIsScraperModalOpen(false)}
+                      className="action-btn"
+                      style={{
+                        flex: 1,
+                        height: "44px",
+                        justifyContent: "center",
+                        borderRadius: "10px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Close
+                    </button>
+                    <button
+                      onClick={handleTriggerScrape}
+                      className="action-btn primary"
+                      style={{
+                        flex: 1.6,
+                        height: "44px",
+                        justifyContent: "center",
+                        borderRadius: "10px",
+                        fontWeight: 700,
+                        background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
+                        boxShadow: "0 4px 14px rgba(15, 23, 42, 0.25)",
+                      }}
+                    >
                       <Play size={13} fill="currentColor" />
-                      Execute Live Scrape
-                    </>
-                  )}
-                </button>
+                      🚀 Launch Background Scraper
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
