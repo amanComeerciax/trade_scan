@@ -18,17 +18,17 @@ export async function GET(request: Request) {
 
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { city: { contains: search, mode: "insensitive" } },
-        { address: { contains: search, mode: "insensitive" } },
-        { contactName: { contains: search, mode: "insensitive" } },
-        { phone: { contains: search, mode: "insensitive" } },
+        { name: { contains: search } },
+        { city: { contains: search } },
+        { address: { contains: search } },
+        { contactName: { contains: search } },
+        { phone: { contains: search } },
         {
           products: {
             some: {
               OR: [
-                { productCategory: { contains: search, mode: "insensitive" } },
-                { hsCode: { contains: search, mode: "insensitive" } },
+                { productCategory: { contains: search } },
+                { hsCode: { contains: search } },
               ],
             },
           },
@@ -43,13 +43,13 @@ export async function GET(request: Request) {
     if (hsCode || tradeType) {
       where.products = {
         some: {
-          ...(hsCode ? { hsCode: { startsWith: hsCode, mode: "insensitive" } } : {}),
-          ...(tradeType ? { tradeType: { contains: tradeType, mode: "insensitive" } } : {}),
+          ...(hsCode ? { hsCode: { startsWith: hsCode } } : {}),
+          ...(tradeType ? { tradeType: { contains: tradeType } } : {}),
         },
       };
     }
 
-    const [companies, total] = await Promise.all([
+    const [companies, total, withPhone, withContact] = await Promise.all([
       prisma.company.findMany({
         where,
         include: {
@@ -60,6 +60,8 @@ export async function GET(request: Request) {
         take: limit,
       }),
       prisma.company.count({ where }),
+      prisma.company.count({ where: { ...where, phone: { not: null } } }),
+      prisma.company.count({ where: { ...where, contactName: { not: null } } }),
     ]);
 
     // Distinct countries for filtering dropdown
@@ -72,12 +74,29 @@ export async function GET(request: Request) {
       .map((c) => c.country)
       .filter((c): c is string => Boolean(c));
 
+    // Dynamic HS Code list with counts
+    const hsCodesGroup = await prisma.companyProduct.groupBy({
+      by: ["hsCode", "productCategory"],
+      _count: { id: true },
+      where: { hsCode: { not: null } },
+      orderBy: { _count: { id: "desc" } },
+    });
+
+    const hsList = hsCodesGroup.map((h) => ({
+      hsCode: h.hsCode as string,
+      productCategory: h.productCategory || `HS ${h.hsCode}`,
+      count: h._count.id,
+    }));
+
     return NextResponse.json({
       companies,
       total,
       page,
       totalPages: Math.ceil(total / limit) || 1,
       countries,
+      hsList,
+      withPhone,
+      withContact,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Internal error";

@@ -6,14 +6,23 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "scrape:browser": "node scripts/playwrightScraper.js",
+    "scrape:stealth": "node scripts/stealthScraper.js",
+    "scrape:subcode": "node scripts/subcodeScraper.js",
+    "scrape:api": "node scripts/apiScraper.js",
+    "scrape:5208": "node scripts/scrape5208World.js",
+    "scrape:310210": "node scripts/scrape310210World.js",
+    "scrape:310210:imports": "node scripts/scrape310210Imports.js",
+    "scrape:310210:exports": "node scripts/scrape310210Exports.js",
+    "scrape:310210:country": "node scripts/scrape310210ByCountry.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "axios": "^1.20.0",
-    "cheerio": "^1.2.0",
     "lucide-react": "^1.44.0",
     "next": "16.3.4",
+    "playwright": "^1.63.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "xlsx": "^0.18.5"
@@ -22,9 +31,12 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cheerio": "^1.2.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
+    "https-proxy-agent": "^9.1.0",
     "prisma": "^6.19.3",
+    "socks-proxy-agent": "^10.1.0",
     "typescript": "^5"
   }
 }
