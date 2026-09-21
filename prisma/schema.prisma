@@ -34,6 +34,7 @@ model Company {
   @@unique([name, country])
   @@index([country])
   @@index([name])
+  @@index([createdAt])
 }
 
 model CompanyProduct {
@@ -44,6 +45,7 @@ model CompanyProduct {
   tradeType       String?  // Exporter, Importer, Both
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@index([hsCode])
   @@index([productCategory])
 }
