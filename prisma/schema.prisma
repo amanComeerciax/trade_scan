@@ -3,21 +3,21 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
 model Company {
-  id          String           @id @default(cuid())
-  name        String
-  country     String?
-  city        String?
-  address     String?
-  phone       String?
-  contactName String?
-  contactRole String?
-  website     String?
-  sourceUrl   String?
+  id                String           @id @default(auto()) @map("_id") @db.ObjectId
+  name              String
+  country           String?
+  city              String?
+  address           String?
+  phone             String?
+  contactName       String?
+  contactRole       String?
+  website           String?
+  sourceUrl         String?
   trademapId        String?          @unique
   externalId        String?
   countryCode       String?
@@ -37,8 +37,8 @@ model Company {
 }
 
 model CompanyProduct {
-  id              String   @id @default(cuid())
-  companyId       String
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  companyId       String   @db.ObjectId
   productCategory String?
   hsCode          String?
   tradeType       String?  // Exporter, Importer, Both
@@ -49,7 +49,7 @@ model CompanyProduct {
 }
 
 model ScrapeJob {
-  id           String    @id @default(cuid())
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
   status       String    // PENDING, RUNNING, COMPLETED, FAILED
   source       String
   target       String?
