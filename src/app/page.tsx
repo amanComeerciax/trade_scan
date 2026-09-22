@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { resolveCommodity } from "@/lib/aiParser";
+import { ALL_COUNTRIES } from "@/lib/countries";
 import { TradeScanLogo, TradeScanMark } from "@/components/TradeScanLogo";
 import {
   Globe,
@@ -1914,61 +1915,20 @@ export default function Dashboard() {
                     <div className="input-with-icon-wrapper">
                       <Globe size={15} className="input-icon-left" />
                       <select
-                        value={scrapeCountry}
+                        value={scrapeCountryCode}
                         onChange={(e) => {
-                          setScrapeCountry(e.target.value);
-                          const codeMap: Record<string, string> = {
-                            World: "000",
-                            India: "699",
-                            Germany: "276",
-                            Vietnam: "704",
-                            "United States": "842",
-                            "United Arab Emirates": "784",
-                            China: "156",
-                            "United Kingdom": "826",
-                            Brazil: "076",
-                            Singapore: "702",
-                            France: "251",
-                            Italy: "381",
-                            Japan: "392",
-                            Canada: "124",
-                            Australia: "036",
-                            Turkey: "792",
-                            Indonesia: "360",
-                            Malaysia: "458",
-                            "South Korea": "410",
-                            Thailand: "764",
-                            Spain: "724",
-                            Netherlands: "528",
-                            "Saudi Arabia": "682",
-                          };
-                          setScrapeCountryCode(codeMap[e.target.value] || "000");
+                          const code = e.target.value;
+                          const found = ALL_COUNTRIES.find((c) => c.code === code);
+                          setScrapeCountryCode(code);
+                          setScrapeCountry(found ? found.name : "World");
                         }}
                         className="modal-select"
                       >
-                        <option value="World">🌍 World (All Global Markets - Code 000)</option>
-                        <option value="India">🇮🇳 India (Top Global Exporter Hub)</option>
-                        <option value="Germany">🇩🇪 Germany (European Commerce)</option>
-                        <option value="Vietnam">🇻🇳 Vietnam (Southeast Asia)</option>
-                        <option value="United States">🇺🇸 United States (North America)</option>
-                        <option value="United Arab Emirates">🇦🇪 United Arab Emirates (Middle East)</option>
-                        <option value="China">🇨🇳 China (East Asia)</option>
-                        <option value="United Kingdom">🇬🇧 United Kingdom (UK)</option>
-                        <option value="Brazil">🇧🇷 Brazil (South America)</option>
-                        <option value="Singapore">🇸🇬 Singapore (Global Trading Hub)</option>
-                        <option value="France">🇫🇷 France</option>
-                        <option value="Italy">🇮🇹 Italy</option>
-                        <option value="Japan">🇯🇵 Japan</option>
-                        <option value="Canada">🇨🇦 Canada</option>
-                        <option value="Australia">🇦🇺 Australia</option>
-                        <option value="Turkey">🇹🇷 Turkey</option>
-                        <option value="Indonesia">🇮🇩 Indonesia</option>
-                        <option value="Malaysia">🇲🇾 Malaysia</option>
-                        <option value="South Korea">🇰🇷 South Korea</option>
-                        <option value="Thailand">🇹🇭 Thailand</option>
-                        <option value="Spain">🇪🇸 Spain</option>
-                        <option value="Netherlands">🇳🇱 Netherlands</option>
-                        <option value="Saudi Arabia">🇸🇦 Saudi Arabia</option>
+                        {ALL_COUNTRIES.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.flag} {c.name} {c.code === "000" ? "(All Global Markets - 000)" : `(ISO ${c.code})`}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     {/* Quick Country Pills */}
@@ -2433,16 +2393,21 @@ export default function Dashboard() {
                       <div>
                         <label className="modal-label" style={{ fontSize: "11px" }}>Default Country</label>
                         <select
-                          value={scrapeCountry}
+                          value={scrapeCountryCode}
                           onChange={(e) => {
-                            setScrapeCountry(e.target.value);
-                            setScrapeCountryCode(e.target.value === "India" ? "699" : "000");
+                            const code = e.target.value;
+                            const found = ALL_COUNTRIES.find((c) => c.code === code);
+                            setScrapeCountryCode(code);
+                            setScrapeCountry(found ? found.name : "World");
                           }}
                           className="modal-select"
                           style={{ height: "36px", fontSize: "12px" }}
                         >
-                          <option value="India">🇮🇳 India (ISO 699)</option>
-                          <option value="World">🌍 World (000)</option>
+                          {ALL_COUNTRIES.map((c) => (
+                            <option key={c.code} value={c.code}>
+                              {c.flag} {c.name} {c.code === "000" ? "(000)" : `(ISO ${c.code})`}
+                            </option>
+                          ))}
                         </select>
                       </div>
                       <div>
