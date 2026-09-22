@@ -667,6 +667,7 @@ class DistributedWorkerRunner {
   async runDistributedBatch(searchesList) {
     if (this.isRunning) throw new Error('A distributed batch job is already running.');
     this.isRunning = true;
+    this.shouldStop = false;
     this.startedAt = Date.now();
 
     const batchId = `batch_${Date.now()}`;

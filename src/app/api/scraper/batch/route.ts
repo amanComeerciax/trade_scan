@@ -215,6 +215,29 @@ export async function POST(request: Request) {
     const tasksFilePath = path.join(process.cwd(), 'scripts', '.batch_tasks.json');
     fs.writeFileSync(tasksFilePath, JSON.stringify(tasks, null, 2));
 
+    // Reset state files for new active run
+    const initialState = {
+      isRunning: true,
+      shouldStop: false,
+      status: 'RUNNING',
+      workerCount,
+      pendingCount: tasks.length,
+      totalTasks: tasks.length,
+      completedTasks: 0,
+      totalExtracted: 0,
+      progressPercent: 0,
+      active: [],
+      completed: [],
+      failed: [],
+      logs: [
+        `[${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })}] 🚀 Launching ${workerCount}x Parallel Batch Pipeline with ${tasks.length} task(s)...`
+      ],
+      updatedAt: new Date().toISOString(),
+    };
+    try { fs.writeFileSync(stateFilePath, JSON.stringify(initialState, null, 2)); } catch {}
+    const distStatePath = path.join(process.cwd(), 'scripts', '.distributed_state.json');
+    try { fs.writeFileSync(distStatePath, JSON.stringify(initialState, null, 2)); } catch {}
+
     // Launch distributed queue master in independent detached background process with dedicated log file
     const scriptPath = path.join(process.cwd(), 'scripts', 'distributedWorkerRunner.js');
     const logFilePath = path.join(process.cwd(), 'scripts', 'batch_scraper.log');
