@@ -45,3 +45,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# browser automation & cache folders
+.chrome*
+.browser-data*
+*.log
+*.png
+

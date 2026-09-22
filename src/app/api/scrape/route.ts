@@ -31,7 +31,7 @@ export async function POST(request: Request) {
 
 export async function GET() {
   try {
-    const [recentJobs, totalCompanies, totalProducts, countryCounts] =
+    const [recentJobs, totalCompanies, totalProducts, countryCounts, hsCounts] =
       await Promise.all([
         prisma.scrapeJob.findMany({
           orderBy: { startedAt: "desc" },
@@ -44,6 +44,11 @@ export async function GET() {
           _count: { id: true },
           where: { country: { not: null } },
         }),
+        prisma.companyProduct.groupBy({
+          by: ["hsCode"],
+          _count: { id: true },
+          where: { hsCode: { not: null } },
+        }),
       ]);
 
     return NextResponse.json({
@@ -55,6 +60,10 @@ export async function GET() {
         countriesList: countryCounts.map((c) => ({
           country: c.country,
           count: c._count.id,
+        })),
+        hsList: hsCounts.map((h) => ({
+          hsCode: h.hsCode || "0901",
+          count: h._count.id,
         })),
       },
     });
