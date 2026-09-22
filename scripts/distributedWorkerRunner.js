@@ -493,10 +493,17 @@ class DistributedWorkerRunner {
       this.log('======================================================================\n');
 
       this.isRunning = false;
+      this.saveState({
+        completed: searchesList.map((s) => ({
+          hsCode: s.hsCode,
+          count: finalStats.totalRecordsExtracted,
+        })),
+      });
       return { batchId, stats: finalStats, files };
     } catch (err) {
       this.log(`❌ Distributed Batch Error: ${err.message}`);
       this.isRunning = false;
+      this.saveState();
       throw err;
     }
   }
