@@ -61,9 +61,31 @@ const COUNTRY_MAP: Record<string, { code: string; name: string }> = {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+
+    if (body.action === 'stop') {
+      if (fs.existsSync(stateFilePath)) {
+        try {
+          const current = JSON.parse(fs.readFileSync(stateFilePath, 'utf8'));
+          current.shouldStop = true;
+          current.isRunning = false;
+          fs.writeFileSync(stateFilePath, JSON.stringify(current, null, 2));
+        } catch {}
+      }
+      const distStatePath = path.join(process.cwd(), 'scripts', '.distributed_state.json');
+      if (fs.existsSync(distStatePath)) {
+        try {
+          const cur = JSON.parse(fs.readFileSync(distStatePath, 'utf8'));
+          cur.shouldStop = true;
+          cur.isRunning = false;
+          fs.writeFileSync(distStatePath, JSON.stringify(cur, null, 2));
+        } catch {}
+      }
+      return NextResponse.json({ success: true, message: 'Batch job stopped.' });
+    }
+
     const {
       hsCodes = [],
-      workerCount = 2,
+      workerCount = 4,
       countryCode = '699',
       tradeFlow = 'exports',
     } = body;
@@ -174,7 +196,7 @@ export async function POST(request: Request) {
       [
         scriptPath,
         `--tasksFile=${tasksFilePath}`,
-        `--workers=${Math.min(Math.max(workerCount, 1), 3)}`,
+        `--workers=${Math.min(Math.max(workerCount, 1), 4)}`,
         `--country=${countryCode}`,
         `--flow=${tradeFlow}`,
       ],

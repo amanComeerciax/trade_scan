@@ -24,10 +24,13 @@ const ISO_COUNTRY_MAP = {
   '784': 'United Arab Emirates', '682': 'Saudi Arabia', '826': 'United Kingdom',
 };
 
+require('dotenv').config();
+
 const WORKER_CREDENTIALS = {
-  1: { username: 'kingamaan14@gmail.com', password: '7861Amaan' },
-  2: { username: 'modipriyanshi013@gmail.com', password: 'Priyanshi@1301' },
-  3: { username: 'trademap1235665@gmail.com', password: 'thakkar@3108' },
+  1: { username: process.env.TRADEMAP_ACCOUNT_1_USER || '', password: process.env.TRADEMAP_ACCOUNT_1_PASS || '' },
+  2: { username: process.env.TRADEMAP_ACCOUNT_2_USER || '', password: process.env.TRADEMAP_ACCOUNT_2_PASS || '' },
+  3: { username: process.env.TRADEMAP_ACCOUNT_3_USER || '', password: process.env.TRADEMAP_ACCOUNT_3_PASS || '' },
+  4: { username: process.env.TRADEMAP_ACCOUNT_4_USER || '', password: process.env.TRADEMAP_ACCOUNT_4_PASS || '' },
 };
 
 class BatchWorker {

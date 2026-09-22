@@ -1,9 +1,9 @@
 /**
- * 👑 TradeScan DISTRIBUTED PRODUCER-CONSUMER RUNNER
+ * 👑 TradeScan DISTRIBUTED PRODUCER-CONSUMER RUNNER (4x High-Speed Parallel Engine)
  * ==================================================================================
- * Master Producer: Breaks searches into page-level tasks in MongoDB.
- * 3 Worker Consumers (Account 1, 2, 3): Parallel consumers with lease-locking,
- * auto-failover, and atomic database upserts.
+ * Master Producer: Analyzes searches and creates page-level tasks in MongoDB.
+ * 4 Worker Consumers (Account 1, 2, 3, 4): Parallel STS workers with lease-locking,
+ * live telemetry, dynamic ETA, and atomic database upserts.
  * ==================================================================================
  */
 
@@ -20,27 +20,61 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 const WORKER_CREDENTIALS = {
   1: {
     username: process.env.TRADEMAP_ACCOUNT_1_USER || 'kingamaan14@gmail.com',
-    password: process.env.TRADEMAP_ACCOUNT_1_PASS || '7861Amaan',
+    password: process.env.TRADEMAP_ACCOUNT_1_PASS || '',
   },
   2: {
     username: process.env.TRADEMAP_ACCOUNT_2_USER || 'modipriyanshi013@gmail.com',
-    password: process.env.TRADEMAP_ACCOUNT_2_PASS || 'Priyanshi@1301',
+    password: process.env.TRADEMAP_ACCOUNT_2_PASS || '',
   },
   3: {
     username: process.env.TRADEMAP_ACCOUNT_3_USER || 'trademap1235665@gmail.com',
-    password: process.env.TRADEMAP_ACCOUNT_3_PASS || 'thakkar@3108',
+    password: process.env.TRADEMAP_ACCOUNT_3_PASS || '',
+  },
+  4: {
+    username: process.env.TRADEMAP_ACCOUNT_4_USER || 'deepthacker.402060@gmail.com',
+    password: process.env.TRADEMAP_ACCOUNT_4_PASS || '',
   },
 };
 
 class DistributedWorkerRunner {
   constructor(options = {}) {
     this.queue = new DistributedQueueManager();
-    this.activeWorkers = options.workerCount || 3;
+    this.activeWorkers = Math.min(Math.max(options.workerCount || 4, 1), 4);
     this.tokens = {}; // workerId -> { token, expiresAt, refreshToken }
     this.isRunning = false;
     this.recentLogs = [];
+    this.startedAt = null;
+    this.currentBatchId = null;
+    this.totalTasksCount = 0;
+    this.completedTasksCount = 0;
+    this.totalRecordsExtracted = 0;
+    this.completedHsList = [];
     this.stateFilePath = path.join(process.cwd(), 'scripts', '.distributed_state.json');
+    this.batchStatePath = path.join(process.cwd(), 'scripts', '.batch_state.json');
     this.onUpdateCallback = options.onUpdate || null;
+
+    // Per-worker detailed live telemetry
+    this.workerStates = {};
+    for (let i = 1; i <= this.activeWorkers; i++) {
+      const email = WORKER_CREDENTIALS[i]?.username || `Worker #${i}`;
+      this.workerStates[i] = {
+        workerId: i,
+        email: email,
+        displayAccount: email.split('@')[0],
+        status: 'IDLE', // 'IDLE' | 'STARTING' | 'FETCHING' | 'ENRICHING' | 'TASK_DONE' | 'STOPPED'
+        hsCode: null,
+        countryName: null,
+        tradeFlow: null,
+        page: 0,
+        totalPages: 0,
+        currentRecord: 0,
+        totalOnPage: 0,
+        extractedThisTask: 0,
+        totalExtracted: 0,
+        currentCompany: 'Waiting for queue task...',
+        updatedAt: Date.now(),
+      };
+    }
   }
 
   log(msg) {
@@ -48,26 +82,61 @@ class DistributedWorkerRunner {
     const formatted = `[${time}] ${msg}`;
     console.log(formatted);
     this.recentLogs.push(formatted);
-    if (this.recentLogs.length > 50) this.recentLogs.shift();
+    if (this.recentLogs.length > 60) this.recentLogs.shift();
     this.saveState();
   }
 
   saveState(extra = {}) {
     try {
+      const now = Date.now();
+      const elapsedSeconds = this.startedAt ? Math.max(1, Math.round((now - this.startedAt) / 1000)) : 0;
+      
+      let etaSeconds = 0;
+      let progressPercent = 0;
+      let speedRecordsPerMin = 0;
+
+      if (this.totalTasksCount > 0) {
+        progressPercent = Math.min(100, Math.round((this.completedTasksCount / this.totalTasksCount) * 100));
+        const remainingTasks = Math.max(0, this.totalTasksCount - this.completedTasksCount);
+        
+        if (this.completedTasksCount > 0 && remainingTasks > 0) {
+          const avgSecPerTask = elapsedSeconds / this.completedTasksCount;
+          etaSeconds = Math.round((remainingTasks * avgSecPerTask) / Math.max(1, this.activeWorkers));
+        } else if (remainingTasks > 0) {
+          // Initial estimate: ~4 sec per task across workers
+          etaSeconds = Math.round((remainingTasks * 4) / Math.max(1, this.activeWorkers));
+        }
+      }
+
+      if (elapsedSeconds > 5 && this.totalRecordsExtracted > 0) {
+        speedRecordsPerMin = Math.round((this.totalRecordsExtracted / elapsedSeconds) * 60);
+      }
+
+      const activeWorkersList = Object.values(this.workerStates);
+
       const state = {
         isRunning: this.isRunning,
+        batchId: this.currentBatchId,
+        startedAt: this.startedAt,
+        elapsedSeconds,
+        etaSeconds,
+        progressPercent,
+        speedRecordsPerMin,
+        totalTasks: this.totalTasksCount,
+        completedTasks: this.completedTasksCount,
+        pendingCount: Math.max(0, this.totalTasksCount - this.completedTasksCount),
+        totalExtracted: this.totalRecordsExtracted,
         workerCount: this.activeWorkers,
-        pendingCount: 0,
-        active: [],
-        completed: [],
+        active: activeWorkersList,
+        completed: this.completedHsList,
         failed: [],
         logs: this.recentLogs,
         updatedAt: new Date().toISOString(),
         ...extra,
       };
+
       fs.writeFileSync(this.stateFilePath, JSON.stringify(state, null, 2));
-      const batchStatePath = path.join(process.cwd(), 'scripts', '.batch_state.json');
-      fs.writeFileSync(batchStatePath, JSON.stringify(state, null, 2));
+      fs.writeFileSync(this.batchStatePath, JSON.stringify(state, null, 2));
       if (this.onUpdateCallback) this.onUpdateCallback(state);
     } catch {}
   }
@@ -140,7 +209,7 @@ class DistributedWorkerRunner {
    * PRODUCER: Splits user search items into page-level tasks in MongoDB
    */
   async produceTasks(searchesList, batchId) {
-    this.log(`📦 [Master Producer] Inspecting total pages for ${searchesList.length} search criteria...`);
+    this.log(`📦 [Master Producer] Calculating pages for ${searchesList.length} search criteria...`);
     const masterToken = await this.getOrRefreshToken(1);
     const tasksToEnqueue = [];
 
@@ -198,7 +267,9 @@ class DistributedWorkerRunner {
     }
 
     const count = await this.queue.enqueueBatchTasks({ batchId, tasks: tasksToEnqueue });
-    this.log(`✅ [Master Producer] Successfully created ${count} discrete tasks in MongoDB Queue!`);
+    this.totalTasksCount = count;
+    this.log(`✅ [Master Producer] Successfully loaded ${count} discrete tasks into MongoDB Queue!`);
+    this.saveState();
     return count;
   }
 
@@ -223,42 +294,47 @@ class DistributedWorkerRunner {
     }
   }
 
-  cleanDirectorName(raw) {
-    if (!raw) return null;
-    let name = String(raw).trim();
-    name = name.replace(/^(mr\.|mrs\.|ms\.|dr\.|prof\.)\s*/i, '');
-    name = name.replace(/\s+/g, ' ');
-    return (name.length < 2 || name.length > 80) ? null : name;
+  cleanDirectorName(name) {
+    if (!name) return null;
+    let clean = name.trim();
+    if (/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(clean)) return null;
+    if (/^(\+?\d[\d\s\-().]{5,}\d)$/.test(clean)) return null;
+    clean = clean.replace(/^(Mr\.?|Mrs\.?|Ms\.?|Dr\.?|Shri|Prof\.?)\s+/i, '');
+    return clean.length >= 2 ? clean : null;
   }
 
-  cleanPhone(raw) {
-    if (!raw) return null;
-    let phone = String(raw).trim().replace(/[^\d+()\s-]/g, '').replace(/\s+/g, ' ');
-    return phone.replace(/[^\d]/g, '').length < 6 ? null : phone;
+  cleanPhone(phone) {
+    if (!phone) return null;
+    let clean = phone.trim().replace(/\s+/g, ' ');
+    if (clean.includes('/')) clean = clean.split('/')[0].trim();
+    if (clean.includes(',')) clean = clean.split(',')[0].trim();
+    if (clean.includes(';')) clean = clean.split(';')[0].trim();
+    if (clean.length < 6) return null;
+    return clean;
   }
 
   /**
-   * Atomic Upsert to MongoDB
+   * Atomically Upsert Company into MongoDB
    */
-  async upsertCompany(rawCompany, hsCode, tradeFlowStr) {
-    if (!rawCompany.name?.trim()) return null;
-    const cleanName = rawCompany.name.trim();
-    const finalCountry = rawCompany.country?.trim() || 'India';
-    const trademapId = rawCompany.id ? String(rawCompany.id).trim() : null;
+  async upsertCompany(data, hsCode, tradeFlowStr) {
+    const trademapId = data.id ? String(data.id) : null;
+    const cleanName = data.name.trim();
+    const finalCountry = data.country || 'India';
 
     const payload = {
-      city: rawCompany.city || undefined,
-      address: rawCompany.address || undefined,
-      website: rawCompany.website || undefined,
-      sourceUrl: rawCompany.sourceUrl || undefined,
-      phone: rawCompany.phone || undefined,
-      contactName: rawCompany.contactName || undefined,
-      contactRole: rawCompany.contactRole || undefined,
+      ...(trademapId ? { trademapId } : {}),
+      city: data.city || null,
+      address: data.address || null,
+      phone: data.phone || null,
+      contactName: data.contactName || null,
+      contactRole: data.contactRole || (data.contactName ? 'Director' : null),
+      website: data.website || null,
+      sourceUrl: data.sourceUrl || null,
       tradeFlow: tradeFlowStr,
-      trademapId: trademapId || undefined,
+      source: 'TradeMap Direct STS API',
     };
 
-    let company;
+    let company = null;
     try {
       if (trademapId) {
         company = await prisma.company.upsert({
@@ -298,12 +374,29 @@ class DistributedWorkerRunner {
   }
 
   /**
-   * CONSUMER: Independent Worker Loop for Account #1, 2, or 3
+   * CONSUMER: Independent Worker Loop for Account #1, 2, 3, or 4
    */
   async runWorkerLoop(workerId, batchId) {
-    this.log(`👷 Worker #${workerId} started consumer loop.`);
+    this.log(`👷 Worker #${workerId} started parallel consumer loop.`);
+    if (this.workerStates[workerId]) {
+      this.workerStates[workerId].status = 'STARTING';
+      this.saveState();
+    }
 
     while (this.isRunning) {
+      // Check for stop request from UI
+      if (fs.existsSync(this.batchStatePath)) {
+        try {
+          const cur = JSON.parse(fs.readFileSync(this.batchStatePath, 'utf8'));
+          if (cur.shouldStop) {
+            this.log(`🛑 Stop signal received. Worker #${workerId} stopping.`);
+            this.workerStates[workerId].status = 'STOPPED';
+            this.saveState();
+            break;
+          }
+        } catch {}
+      }
+
       // 1. Claim next task atomically from MongoDB Queue
       const task = await this.queue.claimNextTask(workerId, batchId);
 
@@ -311,15 +404,38 @@ class DistributedWorkerRunner {
         // Check if entire batch is finished
         const stats = await this.queue.getBatchStats(batchId);
         if (stats.isFinished) {
-          this.log(`🏁 Worker #${workerId}: No more tasks left in batch. Stopping consumer.`);
+          this.log(`🏁 Worker #${workerId}: No more tasks in batch. Consumer completed.`);
+          if (this.workerStates[workerId]) {
+            this.workerStates[workerId].status = 'IDLE';
+            this.workerStates[workerId].currentCompany = 'All tasks completed.';
+          }
+          this.saveState();
           break;
         }
-        // Sleep briefly and check again
+        if (this.workerStates[workerId]) {
+          this.workerStates[workerId].status = 'IDLE';
+          this.workerStates[workerId].currentCompany = 'Waiting for queue tasks...';
+        }
+        this.saveState();
         await sleep(2000);
         continue;
       }
 
-      this.log(`📥 Worker #${workerId} CLAIMED: Task [HS ${task.hsCode} | Page ${task.page}/${task.totalPages} | ${task.tradeFlow}]`);
+      // Update worker live status
+      if (this.workerStates[workerId]) {
+        this.workerStates[workerId].status = 'FETCHING';
+        this.workerStates[workerId].hsCode = task.hsCode;
+        this.workerStates[workerId].countryName = task.countryName;
+        this.workerStates[workerId].tradeFlow = task.tradeFlow;
+        this.workerStates[workerId].page = task.page;
+        this.workerStates[workerId].totalPages = task.totalPages;
+        this.workerStates[workerId].currentCompany = `Fetching HS ${task.hsCode} Page ${task.page}...`;
+        this.workerStates[workerId].extractedThisTask = 0;
+        this.workerStates[workerId].updatedAt = Date.now();
+      }
+      this.saveState();
+
+      this.log(`📥 Worker #${workerId} CLAIMED: HS ${task.hsCode} | Page ${task.page}/${task.totalPages} (${task.tradeFlow})`);
 
       try {
         const token = await this.getOrRefreshToken(workerId);
@@ -348,8 +464,22 @@ class DistributedWorkerRunner {
         const rawCompanies = data.records || [];
         this.log(`📊 Worker #${workerId}: Received ${rawCompanies.length} companies for HS ${task.hsCode} (Page ${task.page})`);
 
+        if (this.workerStates[workerId]) {
+          this.workerStates[workerId].status = 'ENRICHING';
+          this.workerStates[workerId].totalOnPage = rawCompanies.length;
+        }
+        this.saveState();
+
         let extractedCount = 0;
         for (let i = 0; i < rawCompanies.length; i++) {
+          // Re-check stop signal during long loops
+          if (i % 10 === 0 && fs.existsSync(this.batchStatePath)) {
+            try {
+              const cur = JSON.parse(fs.readFileSync(this.batchStatePath, 'utf8'));
+              if (cur.shouldStop) break;
+            } catch {}
+          }
+
           const raw = rawCompanies[i];
           const tradeFlowStr = task.tradeFlow === 'imports' ? 'Importer' : 'Exporter';
 
@@ -381,18 +511,42 @@ class DistributedWorkerRunner {
           await this.upsertCompany(parsed, task.hsCode, tradeFlowStr);
           extractedCount++;
 
-          // Gentle delay
-          await sleep(200);
+          if (this.workerStates[workerId]) {
+            this.workerStates[workerId].currentRecord = i + 1;
+            this.workerStates[workerId].extractedThisTask = extractedCount;
+            this.workerStates[workerId].currentCompany = parsed.name;
+          }
+
+          // Periodic state save every 10 records for smooth live telemetry
+          if (i % 8 === 0 || i === rawCompanies.length - 1) {
+            this.saveState();
+          }
+
+          await sleep(180);
         }
 
         // Mark task complete
         await this.queue.completeTask(task._id, extractedCount);
+        this.completedTasksCount++;
+        this.totalRecordsExtracted += extractedCount;
+
+        if (this.workerStates[workerId]) {
+          this.workerStates[workerId].status = 'TASK_DONE';
+          this.workerStates[workerId].totalExtracted = (this.workerStates[workerId].totalExtracted || 0) + extractedCount;
+          this.workerStates[workerId].currentCompany = `Completed ${extractedCount} verified profiles`;
+        }
+        this.saveState();
+
         this.log(`✅ Worker #${workerId} COMPLETED: HS ${task.hsCode} Page ${task.page} (${extractedCount} companies saved)`);
       } catch (err) {
         this.log(`⚠️ Worker #${workerId} FAILED on HS ${task.hsCode} Page ${task.page}: ${err.message}`);
-        // Automatic Failover: Re-releases task to PENDING so another worker will process it!
         await this.queue.failTask(task._id, err.message);
-        await sleep(3000); // Backoff before next task
+        if (this.workerStates[workerId]) {
+          this.workerStates[workerId].status = 'IDLE';
+          this.workerStates[workerId].currentCompany = `Error: ${err.message}`;
+        }
+        this.saveState();
+        await sleep(3000);
       }
     }
   }
@@ -443,8 +597,16 @@ class DistributedWorkerRunner {
       const filePath = path.join(exportDir, filename);
       XLSX.writeFile(wb, filePath);
 
-      generatedFiles.push({ hsCode, filePath, total: rows.length });
+      generatedFiles.push({ hsCode, filePath, total: rows.length, filename });
+      this.completedHsList.push({
+        hsCode,
+        countryName,
+        tradeFlow,
+        count: rows.length,
+        filename,
+      });
       this.log(`📁 Generated Excel for HS ${hsCode}: ${filename} (${rows.length} rows)`);
+      this.saveState();
     }
 
     return generatedFiles;
@@ -456,12 +618,16 @@ class DistributedWorkerRunner {
   async runDistributedBatch(searchesList) {
     if (this.isRunning) throw new Error('A distributed batch job is already running.');
     this.isRunning = true;
+    this.startedAt = Date.now();
 
     const batchId = `batch_${Date.now()}`;
+    this.currentBatchId = batchId;
+
     this.log('======================================================================');
     this.log(`🚀 STARTING DISTRIBUTED QUEUE BATCH: ${batchId}`);
-    this.log(`👥 Active Worker Accounts: ${this.activeWorkers}`);
+    this.log(`👥 Active Worker Accounts: ${this.activeWorkers} (4x Parallel Pipeline)`);
     this.log('======================================================================\n');
+    this.saveState();
 
     try {
       // Step 1: Master Producer generates tasks
@@ -469,10 +635,11 @@ class DistributedWorkerRunner {
       if (totalTasks === 0) {
         this.log('⚠️ No tasks created. Exiting batch.');
         this.isRunning = false;
+        this.saveState();
         return { batchId, totalTasks: 0, files: [] };
       }
 
-      // Step 2: Spawn 3 Consumer Workers in parallel
+      // Step 2: Spawn 4 Consumer Workers in parallel
       const workerPromises = [];
       for (let wId = 1; wId <= this.activeWorkers; wId++) {
         workerPromises.push(this.runWorkerLoop(wId, batchId));
@@ -494,16 +661,16 @@ class DistributedWorkerRunner {
 
       this.isRunning = false;
       this.saveState({
-        completed: searchesList.map((s) => ({
-          hsCode: s.hsCode,
-          count: finalStats.totalRecordsExtracted,
-        })),
+        isComplete: true,
+        etaSeconds: 0,
+        progressPercent: 100,
+        completed: this.completedHsList,
       });
       return { batchId, stats: finalStats, files };
     } catch (err) {
       this.log(`❌ Distributed Batch Error: ${err.message}`);
       this.isRunning = false;
-      this.saveState();
+      this.saveState({ isError: true, error: err.message });
       throw err;
     }
   }
@@ -514,17 +681,15 @@ module.exports = { DistributedWorkerRunner };
 if (require.main === module) {
   const args = process.argv.slice(2);
   let tasksFile = null;
-  let workers = 3;
+  let workers = 4;
 
   for (const arg of args) {
     if (arg.startsWith('--tasksFile=')) tasksFile = arg.split('=')[1];
-    if (arg.startsWith('--workers=')) workers = parseInt(arg.split('=')[1], 10) || 3;
+    if (arg.startsWith('--workers=')) workers = parseInt(arg.split('=')[1], 10) || 4;
   }
 
   let tasks = [
     { hsCode: '0101', countryCode: '699', countryName: 'India', tradeFlow: 'exports' },
-    { hsCode: '0101', countryCode: '699', countryName: 'India', tradeFlow: 'imports' },
-    { hsCode: '01', countryCode: '699', countryName: 'India', tradeFlow: 'exports' },
   ];
 
   if (tasksFile && fs.existsSync(tasksFile)) {
