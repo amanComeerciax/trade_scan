@@ -2504,12 +2504,12 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    {/* 4. Live Activity Stream / Console ("Kya hua") */}
+                    {/* 4. Real-time Live Activity Stream */}
                     <div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                         <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
                           <Terminal size={13} style={{ color: "#2563eb" }} />
-                          <span>Real-time Live Activity Console ("Kya Hua"):</span>
+                          <span>Real-time Live Activity Stream:</span>
                         </div>
                         <span style={{ fontSize: "10.5px", color: "#64748b" }}>
                           Live Event Stream ({batchStatus.logs?.length || 0} events)
