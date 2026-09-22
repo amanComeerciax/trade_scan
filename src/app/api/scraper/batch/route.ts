@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 
 const stateFilePath = path.join(process.cwd(), 'scripts', '.batch_state.json');
 
@@ -63,24 +63,53 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     if (body.action === 'stop') {
-      if (fs.existsSync(stateFilePath)) {
+      const pidFilePath = path.join(process.cwd(), 'scripts', '.batch_pid.json');
+      if (fs.existsSync(pidFilePath)) {
         try {
-          const current = JSON.parse(fs.readFileSync(stateFilePath, 'utf8'));
-          current.shouldStop = true;
-          current.isRunning = false;
-          fs.writeFileSync(stateFilePath, JSON.stringify(current, null, 2));
+          const { pid } = JSON.parse(fs.readFileSync(pidFilePath, 'utf8'));
+          if (pid) {
+            if (process.platform === 'win32') {
+              try { execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' }); } catch {}
+            } else {
+              try { process.kill(pid, 'SIGKILL'); } catch {}
+            }
+          }
         } catch {}
+        try { fs.unlinkSync(pidFilePath); } catch {}
       }
+
+      // Execute dedicated stopBatch helper script
+      try {
+        const stopScript = path.join(process.cwd(), 'scripts', 'stopBatch.js');
+        execSync(`node "${stopScript}"`, { stdio: 'ignore', timeout: 8000 });
+      } catch {}
+
+      // Guarantee immediate state reflection
       const distStatePath = path.join(process.cwd(), 'scripts', '.distributed_state.json');
-      if (fs.existsSync(distStatePath)) {
-        try {
-          const cur = JSON.parse(fs.readFileSync(distStatePath, 'utf8'));
-          cur.shouldStop = true;
-          cur.isRunning = false;
-          fs.writeFileSync(distStatePath, JSON.stringify(cur, null, 2));
-        } catch {}
+      for (const fPath of [stateFilePath, distStatePath]) {
+        if (fs.existsSync(fPath)) {
+          try {
+            const current = JSON.parse(fs.readFileSync(fPath, 'utf8'));
+            current.shouldStop = true;
+            current.isRunning = false;
+            current.status = 'STOPPED';
+            if (Array.isArray(current.active)) {
+              current.active = current.active.map((w: any) => ({
+                ...w,
+                status: 'STOPPED',
+                currentCompany: 'Stopped by user',
+              }));
+            }
+            fs.writeFileSync(fPath, JSON.stringify(current, null, 2));
+          } catch {}
+        }
       }
-      return NextResponse.json({ success: true, message: 'Batch job stopped.' });
+
+      return NextResponse.json({
+        success: true,
+        isRunning: false,
+        message: 'Batch job stopped and worker processes terminated.',
+      });
     }
 
     const {
@@ -207,6 +236,10 @@ export async function POST(request: Request) {
       }
     );
 
+    const pidFilePath = path.join(process.cwd(), 'scripts', '.batch_pid.json');
+    if (child.pid) {
+      fs.writeFileSync(pidFilePath, JSON.stringify({ pid: child.pid }));
+    }
     child.unref();
 
     return NextResponse.json({

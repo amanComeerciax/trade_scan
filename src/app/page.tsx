@@ -241,18 +241,27 @@ export default function Dashboard() {
             fetchData(page);
             fetchStats();
           } else if (wasBatchRunningRef.current) {
-            // 🎉 Batch just finished!
             wasBatchRunningRef.current = false;
-            playSuccessChime();
-            const lastCompleted = data.completed?.[data.completed.length - 1];
-            const hsText = lastCompleted?.hsCode ? `HS ${lastCompleted.hsCode}` : "Batch";
-            setNotification({
-              id: Date.now().toString(),
-              title: `🎉 ${hsText} Data Extracted Successfully!`,
-              message: `Live 4x batch extraction completed! Total ${data.totalExtracted || 0} verified profiles added to your database.`,
-              type: "success",
-              hsCode: lastCompleted?.hsCode || null,
-            });
+            if (data.shouldStop) {
+              setNotification({
+                id: Date.now().toString(),
+                title: "🛑 Batch Scrape Stopped",
+                message: `Live batch extraction was stopped. Total ${data.totalExtracted || 0} verified profiles saved.`,
+                type: "info",
+                hsCode: null,
+              });
+            } else {
+              playSuccessChime();
+              const lastCompleted = data.completed?.[data.completed.length - 1];
+              const hsText = lastCompleted?.hsCode ? `HS ${lastCompleted.hsCode}` : "Batch";
+              setNotification({
+                id: Date.now().toString(),
+                title: `🎉 ${hsText} Data Extracted Successfully!`,
+                message: `Live 4x batch extraction completed! Total ${data.totalExtracted || 0} verified profiles added to your database.`,
+                type: "success",
+                hsCode: lastCompleted?.hsCode || null,
+              });
+            }
             fetchData(1);
             fetchStats();
           }
@@ -315,6 +324,10 @@ export default function Dashboard() {
   const handleStopBatch = async () => {
     if (!confirm("Are you sure you want to stop the live batch scrape?")) return;
     setIsStoppingBatch(true);
+    // Immediately freeze UI state to prevent flicker
+    setBatchStatus((prev: any) =>
+      prev ? { ...prev, isRunning: false, shouldStop: true } : null
+    );
     try {
       await fetch("/api/scraper/batch", {
         method: "POST",

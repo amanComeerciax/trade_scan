@@ -42,6 +42,7 @@ class DistributedWorkerRunner {
     this.activeWorkers = Math.min(Math.max(options.workerCount || 4, 1), 4);
     this.tokens = {}; // workerId -> { token, expiresAt, refreshToken }
     this.isRunning = false;
+    this.shouldStop = false;
     this.recentLogs = [];
     this.startedAt = null;
     this.currentBatchId = null;
@@ -112,10 +113,19 @@ class DistributedWorkerRunner {
         speedRecordsPerMin = Math.round((this.totalRecordsExtracted / elapsedSeconds) * 60);
       }
 
-      const activeWorkersList = Object.values(this.workerStates);
+      if (fs.existsSync(this.batchStatePath)) {
+        try {
+          const cur = JSON.parse(fs.readFileSync(this.batchStatePath, 'utf8'));
+          if (cur.shouldStop) {
+            this.shouldStop = true;
+            this.isRunning = false;
+          }
+        } catch {}
+      }
 
       const state = {
-        isRunning: this.isRunning,
+        isRunning: this.shouldStop ? false : this.isRunning,
+        shouldStop: Boolean(this.shouldStop),
         batchId: this.currentBatchId,
         startedAt: this.startedAt,
         elapsedSeconds,
@@ -383,19 +393,26 @@ class DistributedWorkerRunner {
       this.saveState();
     }
 
-    while (this.isRunning) {
+    while (this.isRunning && !this.shouldStop) {
       // Check for stop request from UI
+      if (this.shouldStop) break;
       if (fs.existsSync(this.batchStatePath)) {
         try {
           const cur = JSON.parse(fs.readFileSync(this.batchStatePath, 'utf8'));
           if (cur.shouldStop) {
+            this.shouldStop = true;
+            this.isRunning = false;
             this.log(`🛑 Stop signal received. Worker #${workerId} stopping.`);
-            this.workerStates[workerId].status = 'STOPPED';
+            if (this.workerStates[workerId]) {
+              this.workerStates[workerId].status = 'STOPPED';
+              this.workerStates[workerId].currentCompany = 'Stopped by user';
+            }
             this.saveState();
             break;
           }
         } catch {}
       }
+      if (this.shouldStop || !this.isRunning) break;
 
       // 1. Claim next task atomically from MongoDB Queue
       const task = await this.queue.claimNextTask(workerId, batchId);
@@ -456,11 +473,37 @@ class DistributedWorkerRunner {
           throw new Error('Token expired');
         }
 
-        if (res.status === 429) {
-          throw new Error('Rate limit 429 from TradeMap');
+        if (res.status === 403) {
+          const errText = await res.text().catch(() => '');
+          this.log(`⚠️ Worker #${workerId} PAUSED: Received 403 Forbidden (${errText.slice(0, 60)}). Deactivating this worker.`);
+          if (this.workerStates[workerId]) {
+            this.workerStates[workerId].status = 'DISABLED';
+            this.workerStates[workerId].currentCompany = 'Access restricted (403)';
+          }
+          await this.queue.failTask(task._id, 'Access forbidden (403)');
+          this.saveState();
+          break;
         }
 
-        const data = await res.json();
+        const rawText = await res.text();
+        if (rawText.includes('Forbidden:') || rawText.includes('blacklisted') || rawText.includes('account-blocked')) {
+          this.log(`⚠️ Worker #${workerId} PAUSED: Received TradeMap blacklist response. Deactivating this worker.`);
+          if (this.workerStates[workerId]) {
+            this.workerStates[workerId].status = 'DISABLED';
+            this.workerStates[workerId].currentCompany = 'Blacklisted by TradeMap WAF';
+          }
+          await this.queue.failTask(task._id, 'Blacklisted by TradeMap');
+          this.saveState();
+          break;
+        }
+
+        let data = {};
+        try {
+          data = JSON.parse(rawText);
+        } catch (jsonErr) {
+          throw new Error(`Invalid response format from TradeMap: ${rawText.slice(0, 80)}`);
+        }
+
         const rawCompanies = data.records || [];
         this.log(`📊 Worker #${workerId}: Received ${rawCompanies.length} companies for HS ${task.hsCode} (Page ${task.page})`);
 
@@ -473,12 +516,18 @@ class DistributedWorkerRunner {
         let extractedCount = 0;
         for (let i = 0; i < rawCompanies.length; i++) {
           // Re-check stop signal during long loops
-          if (i % 10 === 0 && fs.existsSync(this.batchStatePath)) {
+          if (this.shouldStop) break;
+          if (i % 5 === 0 && fs.existsSync(this.batchStatePath)) {
             try {
               const cur = JSON.parse(fs.readFileSync(this.batchStatePath, 'utf8'));
-              if (cur.shouldStop) break;
+              if (cur.shouldStop) {
+                this.shouldStop = true;
+                this.isRunning = false;
+                break;
+              }
             } catch {}
           }
+          if (this.shouldStop) break;
 
           const raw = rawCompanies[i];
           const tradeFlowStr = task.tradeFlow === 'imports' ? 'Importer' : 'Exporter';
@@ -646,6 +695,18 @@ class DistributedWorkerRunner {
       }
 
       await Promise.all(workerPromises);
+
+      if (this.shouldStop) {
+        this.log('\n🛑 Batch execution was stopped by user. Cleaning up...');
+        this.isRunning = false;
+        this.saveState({
+          isComplete: false,
+          shouldStop: true,
+          status: 'STOPPED',
+          etaSeconds: 0,
+        });
+        return { batchId, totalTasks: this.totalTasksCount, stopped: true };
+      }
 
       // Step 3: Generate Excel reports
       this.log('\n📦 All workers finished! Generating consolidated Excel exports...');
