@@ -229,83 +229,118 @@ async function upsertCompany(data, hsCode, tradeFlowStr) {
   }
 }
 
+async function safePageEvaluate(page, fn, arg = null, retries = 5, delayMs = 2500) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+      return await page.evaluate(fn, arg);
+    } catch (err) {
+      const msg = err?.message || '';
+      const isNav = msg.includes('Execution context was destroyed') ||
+                    msg.includes('Cannot find context') ||
+                    msg.includes('navigating') ||
+                    msg.includes('Target closed');
+      if (isNav && attempt < retries) {
+        appendLog(`⏳ Navigation / context reset detected (retry ${attempt}/${retries}). Waiting for page to settle...`);
+        await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
+        await sleep(delayMs);
+        continue;
+      }
+      if (attempt === retries) throw err;
+      await sleep(1000);
+    }
+  }
+}
+
 async function getLiveTokenFromPage(page) {
-  return page.evaluate(() => {
-    try {
-      const direct = localStorage.getItem('0-TradeMap');
-      if (direct) {
-        const parsed = JSON.parse(direct);
-        const token = parsed.authnResult?.access_token || parsed.authzData || null;
-        if (token) {
-          // Check expiration
-          try {
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            const now = Math.floor(Date.now() / 1000);
-            if (payload.exp && payload.exp < now + 60) return null; // Expired or expiring in < 60s
-          } catch {}
-          return token;
+  try {
+    return await safePageEvaluate(page, () => {
+      try {
+        const direct = localStorage.getItem('0-TradeMap');
+        if (direct) {
+          const parsed = JSON.parse(direct);
+          const token = parsed.authnResult?.access_token || parsed.authzData || null;
+          if (token) {
+            // Check expiration
+            try {
+              const payload = JSON.parse(atob(token.split('.')[1]));
+              const now = Math.floor(Date.now() / 1000);
+              if (payload.exp && payload.exp < now + 60) return null; // Expired or expiring in < 60s
+            } catch {}
+            return token;
+          }
         }
-      }
-    } catch {}
+      } catch {}
 
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        const val = localStorage.getItem(key);
-        if (val && val.includes('access_token')) {
-          const parsed = JSON.parse(val);
-          return parsed.authnResult?.access_token || parsed.access_token || null;
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          const val = localStorage.getItem(key);
+          if (val && val.includes('access_token')) {
+            const parsed = JSON.parse(val);
+            return parsed.authnResult?.access_token || parsed.access_token || null;
+          }
         }
-      }
-    } catch {}
+      } catch {}
 
+      return null;
+    });
+  } catch (err) {
+    appendLog(`⚠️ Could not retrieve token: ${err.message}`);
     return null;
-  });
+  }
 }
 
 async function refreshTokenIfNeeded(page) {
   appendLog('🔄 Refreshing TradeMap session token via STS...');
-  const refreshedToken = await page.evaluate(async () => {
-    try {
-      const raw = localStorage.getItem('0-TradeMap');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      const rt = parsed.authnResult?.refresh_token;
-      if (!rt) return null;
+  try {
+    const refreshedToken = await safePageEvaluate(page, async () => {
+      try {
+        const raw = localStorage.getItem('0-TradeMap');
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        const rt = parsed.authnResult?.refresh_token;
+        if (!rt) return null;
 
-      const body = new URLSearchParams({
-        client_id: 'TradeMap',
-        grant_type: 'refresh_token',
-        refresh_token: rt,
-      });
+        const body = new URLSearchParams({
+          client_id: 'TradeMap',
+          grant_type: 'refresh_token',
+          refresh_token: rt,
+        });
 
-      const res = await fetch('https://sts.marketanalysis.intracen.org/connect/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body.toString(),
-      });
+        const res = await fetch('https://sts.marketanalysis.intracen.org/connect/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        });
 
-      const json = await res.json();
-      if (json.access_token) {
-        parsed.authnResult.access_token = json.access_token;
-        if (json.refresh_token) parsed.authnResult.refresh_token = json.refresh_token;
-        localStorage.setItem('0-TradeMap', JSON.stringify(parsed));
-        return json.access_token;
+        const json = await res.json();
+        if (json.access_token) {
+          parsed.authnResult.access_token = json.access_token;
+          if (json.refresh_token) parsed.authnResult.refresh_token = json.refresh_token;
+          localStorage.setItem('0-TradeMap', JSON.stringify(parsed));
+          return json.access_token;
+        }
+        return null;
+      } catch {
+        return null;
       }
-      return null;
-    } catch {
-      return null;
-    }
-  });
+    });
 
-  if (refreshedToken) {
-    appendLog('🔑 Token Status: ✅ ACTIVE (Renewed 1-hour session via STS)');
-    return refreshedToken;
+    if (refreshedToken) {
+      appendLog('🔑 Token Status: ✅ ACTIVE (Renewed 1-hour session via STS)');
+      return refreshedToken;
+    }
+  } catch (err) {
+    appendLog(`⚠️ STS Refresh notice: ${err.message}`);
   }
 
   // Fallback to page reload
-  await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
-  await sleep(3000);
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+  } catch {}
+  await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
+  await sleep(4000);
   const newToken = await getLiveTokenFromPage(page);
   appendLog(`🔑 Token Status: ${newToken ? '✅ ACTIVE' : '⚠️ Need Login'}`);
   return newToken;
@@ -354,7 +389,7 @@ async function runScrapePass({ page, sortDir = 'asc', totalRecordsGoal = 10000, 
     let retryCount = 0;
 
     while (!data) {
-      const listResult = await page.evaluate(async ({ pageNum, pageSize, sortDirection, hsCode, countryCode, tradeFlow }) => {
+      const listResult = await safePageEvaluate(page, async ({ pageNum, pageSize, sortDirection, hsCode, countryCode, tradeFlow }) => {
         function getToken() {
           try {
             const raw = localStorage.getItem('0-TradeMap');
@@ -387,6 +422,14 @@ async function runScrapePass({ page, sortDir = 'asc', totalRecordsGoal = 10000, 
         countryCode: CONFIG.COUNTRY_CODE,
         tradeFlow: CONFIG.TRADE_FLOW,
       });
+
+      if (!listResult) {
+        retryCount++;
+        appendLog(`⚠️ Empty response on Page ${currentPage} evaluate (retry ${retryCount}/3)...`);
+        await sleep(2500);
+        if (retryCount > 3) break;
+        continue;
+      }
 
       if (listResult.ok && listResult.json) {
         data = listResult.json;
@@ -451,7 +494,7 @@ async function runScrapePass({ page, sortDir = 'asc', totalRecordsGoal = 10000, 
       let contactInfo = { name: null, role: null, phone: null };
       if (companyId) {
         for (let cRetry = 0; cRetry < 3; cRetry++) {
-          const cRes = await page.evaluate(async ({ cId, sId }) => {
+          const cRes = await safePageEvaluate(page, async ({ cId, sId }) => {
             function getToken() {
               try {
                 const item = localStorage.getItem('0-TradeMap');
@@ -560,14 +603,34 @@ async function main() {
 
   const targetUrl = `https://www.trademap.org/en/goods/companies/c/${CONFIG.COUNTRY_CODE}/${CONFIG.TRADE_FLOW === 'I' ? 'imports' : 'exports'}/p/${CONFIG.HS_CODE}`;
   appendLog(`🌐 Loading TradeMap: ${targetUrl}`);
-  await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+  try {
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  } catch (err) {
+    appendLog(`⚠️ Navigation notice: ${err.message}`);
+  }
+  // Wait for initial scripts & potential client redirects to settle
+  await page.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
   await sleep(4000);
+
+  const activeUrl = page.url();
+  appendLog(`📍 Active Page: ${activeUrl}`);
 
   let liveToken = await getLiveTokenFromPage(page);
   if (!liveToken) {
     liveToken = await refreshTokenIfNeeded(page);
   }
-  appendLog(`🔑 Auth Status: ${liveToken ? '✅ ACTIVE BEARER TOKEN' : '⚠️ GUEST (Will auto-refresh)'}`);
+
+  // Grace polling: If session is still initializing in browser profile, check for up to 6 seconds
+  if (!liveToken) {
+    appendLog('⏳ Verifying TradeMap session in browser profile...');
+    for (let i = 1; i <= 3; i++) {
+      await sleep(2000);
+      liveToken = await getLiveTokenFromPage(page);
+      if (liveToken) break;
+    }
+  }
+
+  appendLog(`🔑 Auth Status: ${liveToken ? '✅ ACTIVE BEARER TOKEN' : '⚠️ GUEST (Unauthenticated session)'}`);
 
   const stats = { processed: 0, inserted: 0, duplicates: 0 };
   const pass1 = await runScrapePass({ page, sortDir: 'asc', stats });

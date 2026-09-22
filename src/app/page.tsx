@@ -147,9 +147,19 @@ export default function Dashboard() {
 
   // Filters
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedCountry, setSelectedCountry] = useState("");
   const [selectedTradeType, setSelectedTradeType] = useState("");
   const [selectedHsCode, setSelectedHsCode] = useState("");
+  const [isLoadingData, setIsLoadingData] = useState(false);
+
+  // Debounce search input by 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   // Modals & Panels
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -256,10 +266,11 @@ export default function Dashboard() {
   // Manual fetch for pagination and refresh
   const fetchData = async (pageNum = page) => {
     try {
+      setIsLoadingData(true);
       const query = new URLSearchParams({
         page: pageNum.toString(),
         limit: "10",
-        search,
+        search: debouncedSearch,
         country: selectedCountry,
         hsCode: selectedHsCode,
         tradeType: selectedTradeType,
@@ -278,6 +289,8 @@ export default function Dashboard() {
       }
     } catch (err) {
       console.error("Error loading companies:", err);
+    } finally {
+      setIsLoadingData(false);
     }
   };
 
@@ -293,30 +306,29 @@ export default function Dashboard() {
     }
   };
 
-  // Load initial data and react to filter changes
+  // Load global database stats once on mount
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  // React instantly to filter changes with high speed
   useEffect(() => {
     let ignore = false;
+    setIsLoadingData(true);
 
     async function loadData() {
       try {
         const query = new URLSearchParams({
           page: "1",
           limit: "10",
-          search,
+          search: debouncedSearch,
           country: selectedCountry,
           hsCode: selectedHsCode,
           tradeType: selectedTradeType,
         });
 
-        const [compRes, statsRes] = await Promise.all([
-          fetch(`/api/companies?${query.toString()}`),
-          fetch("/api/scrape"),
-        ]);
-
-        const [compData, statsData] = await Promise.all([
-          compRes.json(),
-          statsRes.json(),
-        ]);
+        const compRes = await fetch(`/api/companies?${query.toString()}`);
+        const compData = await compRes.json();
 
         if (!ignore) {
           if (compData.companies) {
@@ -328,12 +340,11 @@ export default function Dashboard() {
             if (compData.withPhone !== undefined) setWithPhoneCount(compData.withPhone);
             if (compData.withContact !== undefined) setWithContactCount(compData.withContact);
           }
-          if (statsData.stats) {
-            setStats(statsData.stats);
-          }
         }
       } catch (err) {
         console.error("Error loading data:", err);
+      } finally {
+        if (!ignore) setIsLoadingData(false);
       }
     }
 
@@ -342,7 +353,7 @@ export default function Dashboard() {
     return () => {
       ignore = true;
     };
-  }, [search, selectedCountry, selectedHsCode, selectedTradeType]);
+  }, [debouncedSearch, selectedCountry, selectedHsCode, selectedTradeType]);
 
   // Handle Scraper Trigger
   const handleTriggerScrape = async () => {
@@ -1162,6 +1173,17 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Loading line indicator */}
+          {isLoadingData && (
+            <div style={{
+              height: "2px",
+              width: "100%",
+              background: "linear-gradient(90deg, #2563eb 0%, #10b981 50%, #2563eb 100%)",
+              backgroundSize: "200% 100%",
+              animation: "loadingSlide 1s linear infinite",
+            }} />
+          )}
+
           {/* Table */}
           <table className="vocalyn-table">
             <thead>
@@ -1184,7 +1206,7 @@ export default function Dashboard() {
                 <th style={{ width: "9%", textAlign: "right" }}>Actions ↕</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody style={{ opacity: isLoadingData ? 0.6 : 1, transition: "opacity 0.15s ease" }}>
               {companies.length === 0 ? (
                 <tr>
                   <td colSpan={8} style={{ textAlign: "center", padding: "48px 0" }}>
