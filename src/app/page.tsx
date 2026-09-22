@@ -2562,15 +2562,15 @@ export default function Dashboard() {
                             background: "#f0fdf4",
                             border: "1px solid #86efac",
                             borderRadius: "12px",
-                            padding: "12px 14px",
-                            marginBottom: "16px",
+                            padding: "10px 14px",
+                            marginBottom: "14px",
                           }}
                         >
-                          <div style={{ fontSize: "12px", fontWeight: 700, color: "#15803d", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <div style={{ fontSize: "12px", fontWeight: 700, color: "#15803d", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
                             <CheckCircle size={14} style={{ color: "#16a34a" }} />
                             <span>Recently Completed Extractions ({batchStatus.completed.length} HS Codes Ready):</span>
                           </div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                             {batchStatus.completed.map((c: any) => (
                               <button
                                 key={c.hsCode}
@@ -2580,28 +2580,270 @@ export default function Dashboard() {
                                   display: "inline-flex",
                                   alignItems: "center",
                                   gap: "6px",
-                                  padding: "6px 12px",
+                                  padding: "5px 10px",
                                   background: "#ffffff",
                                   border: "1px solid #86efac",
-                                  borderRadius: "8px",
-                                  fontSize: "12px",
+                                  borderRadius: "7px",
+                                  fontSize: "11.5px",
                                   fontWeight: 600,
                                   color: "#166534",
                                   cursor: "pointer",
-                                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
                                 }}
                                 title={`Download dedicated Excel for HS ${c.hsCode}`}
                               >
-                                <FileSpreadsheet size={14} style={{ color: "#16a34a" }} />
+                                <FileSpreadsheet size={13} style={{ color: "#16a34a" }} />
                                 <span>Download HS {c.hsCode} ({c.count} records)</span>
                               </button>
                             ))}
                           </div>
                         </div>
-                  )}
+                      )}
 
-                </>
-              )}
+                      {/* Account Login Setup Section - 4 Accounts */}
+                      <div
+                        style={{
+                          background: "#f8fafc",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "12px",
+                          padding: "12px 14px",
+                          marginBottom: "14px",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                          <div style={{ fontSize: "12px", fontWeight: 700, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span>🔐</span>
+                            <span>TradeMap 4-Account Cloud Cluster (All 4 Configured)</span>
+                          </div>
+                          <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: 700 }}>4 Accounts Ready</span>
+                        </div>
+
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
+                          {[
+                            { id: 1, name: "kingamaan14" },
+                            { id: 2, name: "modipriyanshi" },
+                            { id: 3, name: "thakkar3108" },
+                            { id: 4, name: "deepthacker" },
+                          ].map((acc) => (
+                            <button
+                              key={acc.id}
+                              type="button"
+                              onClick={() => handleSetupWorkerAccount(acc.id)}
+                              disabled={openingWorkerId === acc.id}
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                padding: "6px 8px",
+                                borderRadius: "8px",
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                border: "1px solid #cbd5e1",
+                                background: "#ffffff",
+                                color: "#334155",
+                                cursor: "pointer",
+                                transition: "all 0.15s ease",
+                              }}
+                              title={`Opens Chrome profile for Account #${acc.id} (${acc.name})`}
+                            >
+                              <span style={{ fontWeight: 700, color: "#1d4ed8" }}>Acc #{acc.id}</span>
+                              <span style={{ fontSize: "9.5px", color: "#64748b" }}>{acc.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Worker Concurrency Selector - 1x to 4x */}
+                      <div className="modal-form-group" style={{ marginBottom: "14px" }}>
+                        <label className="modal-label">Parallel Worker Speed & Accounts</label>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
+                          {[
+                            { count: 1, label: "1 Account", tag: "Sequential" },
+                            { count: 2, label: "2 Accounts ⚡", tag: "2x Parallel" },
+                            { count: 3, label: "3 Accounts 🚀", tag: "3x Super Fast" },
+                            { count: 4, label: "4 Accounts 👑", tag: "4x Max Speed" },
+                          ].map((w) => (
+                            <button
+                              key={w.count}
+                              type="button"
+                              onClick={() => setBatchWorkerCount(w.count)}
+                              style={{
+                                padding: "8px 6px",
+                                borderRadius: "8px",
+                                border: batchWorkerCount === w.count ? "1.5px solid #2563eb" : "1px solid #e2e8f0",
+                                background: batchWorkerCount === w.count ? "#eff6ff" : "#ffffff",
+                                color: batchWorkerCount === w.count ? "#1d4ed8" : "#475569",
+                                fontWeight: 600,
+                                fontSize: "11.5px",
+                                cursor: "pointer",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                gap: "2px",
+                              }}
+                            >
+                              <span>{w.label}</span>
+                              <span style={{ fontSize: "9.5px", color: batchWorkerCount === w.count ? "#2563eb" : "#94a3b8" }}>
+                                {w.tag}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* HS Codes List Textarea with Live Task Preview */}
+                      <div className="modal-form-group" style={{ marginBottom: "14px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                          <label className="modal-label" style={{ margin: 0 }}>
+                            List of Tasks (HS Code, Country, Trade Flow)
+                          </label>
+                          <span style={{ fontSize: "11px", color: "#2563eb", fontWeight: 600 }}>
+                            {batchHsInput.split(/\r?\n/).filter((s) => s.trim()).length} Tasks Queued
+                          </span>
+                        </div>
+                        <textarea
+                          rows={4}
+                          value={batchHsInput}
+                          onChange={(e) => setBatchHsInput(e.target.value)}
+                          placeholder={"Type or paste line-by-line, for example:\n0101, India, Exporters\n1006, World, Importers\n5208, Germany, Exporters\n3004 (uses fallback below)"}
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            borderRadius: "10px",
+                            border: "1px solid #cbd5e1",
+                            fontSize: "12.5px",
+                            fontFamily: "var(--font-mono)",
+                            color: "#0f172a",
+                            background: "#ffffff",
+                            outline: "none",
+                            resize: "vertical",
+                            lineHeight: "1.6",
+                          }}
+                        />
+
+                        {/* Live Parsed Preview Badges */}
+                        {(() => {
+                          const previews = batchHsInput
+                            .split(/\r?\n/)
+                            .map((line) => {
+                              const parts = line.split(/[,|\t]+/).map((s) => s.trim()).filter(Boolean);
+                              const code = parts[0] ? parts[0].replace(/[^\w]/g, "") : "";
+                              if (!code) return null;
+                              let country = scrapeCountry || "India";
+                              let flow = scrapeTradeFlow === "exports" ? "Exporters" : "Importers";
+
+                              if (parts.length >= 2) {
+                                const p2 = parts[1].toLowerCase();
+                                if (p2.includes("exp") || p2 === "e") flow = "Exporters";
+                                else if (p2.includes("imp") || p2 === "i") flow = "Importers";
+                                else country = parts[1];
+                              }
+                              if (parts.length >= 3) {
+                                const p3 = parts[2].toLowerCase();
+                                if (p3.includes("exp") || p3 === "e") flow = "Exporters";
+                                else if (p3.includes("imp") || p3 === "i") flow = "Importers";
+                              }
+                              return { code, country, flow };
+                            })
+                            .filter((p): p is { code: string; country: string; flow: string } => Boolean(p));
+
+                          if (previews.length === 0) return null;
+
+                          return (
+                            <div style={{ marginTop: "8px" }}>
+                              <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                                Live Task Preview:
+                              </span>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexWrap: "wrap",
+                                  gap: "6px",
+                                  marginTop: "4px",
+                                  maxHeight: "75px",
+                                  overflowY: "auto",
+                                }}
+                              >
+                                {previews.map((p, idx) => (
+                                  <span
+                                    key={idx}
+                                    style={{
+                                      fontSize: "11px",
+                                      background: "#eff6ff",
+                                      border: "1px solid #bfdbfe",
+                                      borderRadius: "6px",
+                                      padding: "3px 8px",
+                                      color: "#1e40af",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                    }}
+                                  >
+                                    <strong>HS {p.code}</strong>
+                                    <span style={{ color: "#93c5fd" }}>•</span>
+                                    <span>📍 {p.country}</span>
+                                    <span style={{ color: "#93c5fd" }}>•</span>
+                                    <span style={{ fontWeight: 600, color: p.flow === "Exporters" ? "#059669" : "#0284c7" }}>
+                                      {p.flow}
+                                    </span>
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Fallback Country & Flow Settings */}
+                      <div
+                        style={{
+                          background: "#f8fafc",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "10px",
+                          padding: "10px 14px",
+                          marginBottom: "14px",
+                        }}
+                      >
+                        <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "8px" }}>
+                          Fallback Settings (Used if Country/Flow is not specified in a line above):
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                          <div>
+                            <label className="modal-label" style={{ fontSize: "11px" }}>Default Country</label>
+                            <select
+                              value={scrapeCountryCode}
+                              onChange={(e) => {
+                                const code = e.target.value;
+                                const found = ALL_COUNTRIES.find((c) => c.code === code);
+                                setScrapeCountryCode(code);
+                                setScrapeCountry(found ? found.name : "World");
+                              }}
+                              className="modal-select"
+                              style={{ height: "36px", fontSize: "12px" }}
+                            >
+                              {ALL_COUNTRIES.map((c) => (
+                                <option key={c.code} value={c.code}>
+                                  {c.flag} {c.name} {c.code === "000" ? "(000)" : `(ISO ${c.code})`}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="modal-label" style={{ fontSize: "11px" }}>Default Flow</label>
+                            <select
+                              value={scrapeTradeFlow}
+                              onChange={(e) => setScrapeTradeFlow(e.target.value as "exports" | "imports")}
+                              className="modal-select"
+                              style={{ height: "36px", fontSize: "12px", fontWeight: 600 }}
+                            >
+                              <option value="exports">↗ Exporters / Suppliers</option>
+                              <option value="imports">↙ Importers / Buyers</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
               </div>
 
               {/* Pinned Footer Action Buttons - ALWAYS PINNED AT BOTTOM */}
