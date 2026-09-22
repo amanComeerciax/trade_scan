@@ -183,6 +183,88 @@ export default function Dashboard() {
   const [activeJobRecords, setActiveJobRecords] = useState<number>(0);
   const [isOpeningBrowser, setIsOpeningBrowser] = useState(false);
 
+  // Batch Scraper State (Multi-Account Parallel Runner)
+  const [scraperTab, setScraperTab] = useState<"single" | "batch">("single");
+  const [batchHsInput, setBatchHsInput] = useState("0101\n0910\n1006\n5208\n3004");
+  const [batchWorkerCount, setBatchWorkerCount] = useState<number>(2);
+  const [batchStatus, setBatchStatus] = useState<any>(null);
+  const [isStartingBatch, setIsStartingBatch] = useState(false);
+  const [openingWorkerId, setOpeningWorkerId] = useState<number | null>(null);
+
+  // Poll batch scraper status
+  useEffect(() => {
+    let active = true;
+    const checkBatch = async () => {
+      try {
+        const res = await fetch("/api/scraper/batch");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (active) {
+          setBatchStatus(data);
+          if (data.isRunning) {
+            fetchData(page);
+            fetchStats();
+          }
+        }
+      } catch {}
+    };
+
+    checkBatch();
+    const interval = setInterval(checkBatch, 3000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [page]);
+
+  const handleStartBatch = async () => {
+    setIsStartingBatch(true);
+    try {
+      const codes = batchHsInput
+        .split(/[\n,;]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (codes.length === 0) {
+        alert("Please enter at least one valid HS code.");
+        return;
+      }
+      const res = await fetch("/api/scraper/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hsCodes: codes,
+          workerCount: batchWorkerCount,
+          countryCode: scrapeCountryCode,
+          tradeFlow: scrapeTradeFlow,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to start batch scrape.");
+      } else {
+        const statusRes = await fetch("/api/scraper/batch");
+        const statusData = await statusRes.json();
+        setBatchStatus(statusData);
+      }
+    } catch (err: any) {
+      alert("Network error: " + err.message);
+    } finally {
+      setIsStartingBatch(false);
+    }
+  };
+
+  const handleSetupWorkerAccount = async (wId: number) => {
+    setOpeningWorkerId(wId);
+    try {
+      await fetch("/api/scraper", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "open-browser", workerId: wId }),
+      });
+    } catch {}
+    setTimeout(() => setOpeningWorkerId(null), 3000);
+  };
+
   // Selection & Deletion State
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -1634,415 +1716,849 @@ export default function Dashboard() {
               className="modal-dialog"
               onClick={(e) => e.stopPropagation()}
               style={{
-                maxWidth: "520px",
-                padding: "26px",
+                maxWidth: scraperTab === "batch" ? "min(640px, calc(100vw - 32px))" : "min(520px, calc(100vw - 32px))",
+                maxHeight: "calc(100dvh - 32px)",
+                display: "flex",
+                flexDirection: "column",
+                padding: 0,
                 borderRadius: "18px",
                 border: "1px solid #e2e8f0",
                 boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.25)",
+                overflow: "hidden",
               }}
             >
-              {/* Header */}
-              <div className="modal-header" style={{ marginBottom: "20px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <TradeScanMark size={38} />
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <h3 className="modal-title" style={{ fontSize: "16px", margin: 0 }}>
-                        TradeMap Live Scraper
-                      </h3>
-                      <span
-                        style={{
-                          fontSize: "10.5px",
-                          fontWeight: 600,
-                          padding: "2px 7px",
-                          borderRadius: "12px",
-                          background: "#ecfdf5",
-                          color: "#059669",
-                          border: "1px solid #a7f3d0",
+              {/* Pinned Header */}
+              <div
+                className="modal-dialog-header"
+                style={{
+                  padding: "18px 22px 12px 22px",
+                  borderBottom: "1px solid #f1f5f9",
+                  background: "#ffffff",
+                  flexShrink: 0,
+                }}
+              >
+                <div className="modal-header" style={{ marginBottom: "14px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <TradeScanMark size={36} />
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <h3 className="modal-title" style={{ fontSize: "16px", margin: 0 }}>
+                          TradeMap Live Scraper
+                        </h3>
+                        <span
+                          style={{
+                            fontSize: "10.5px",
+                            fontWeight: 600,
+                            padding: "2px 7px",
+                            borderRadius: "12px",
+                            background: "#ecfdf5",
+                            color: "#059669",
+                            border: "1px solid #a7f3d0",
+                          }}
+                        >
+                          Direct API
+                        </span>
+                      </div>
+                      <p style={{ fontSize: "12px", color: "var(--text-secondary)", margin: "2px 0 0 0" }}>
+                        Extract verified exporter directories with director names & phone contacts
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsScraperModalOpen(false)}
+                    className="mini-icon-btn"
+                    style={{ borderRadius: "8px", width: "30px", height: "30px" }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {/* Mode Selector Tabs: Single HS Code vs Batch Mode */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "6px",
+                    background: "#f1f5f9",
+                    padding: "4px",
+                    borderRadius: "10px",
+                    border: "1px solid #e2e8f0",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setScraperTab("single")}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: "7px",
+                      border: "none",
+                      background: scraperTab === "single" ? "#ffffff" : "transparent",
+                      color: scraperTab === "single" ? "#0f172a" : "#64748b",
+                      fontWeight: 600,
+                      fontSize: "12.5px",
+                      cursor: "pointer",
+                      boxShadow: scraperTab === "single" ? "0 1px 3px rgba(0,0,0,0.06)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    🎯 Single HS Code
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setScraperTab("batch")}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: "7px",
+                      border: "none",
+                      background: scraperTab === "batch" ? "#ffffff" : "transparent",
+                      color: scraperTab === "batch" ? "#2563eb" : "#64748b",
+                      fontWeight: 600,
+                      fontSize: "12.5px",
+                      cursor: "pointer",
+                      boxShadow: scraperTab === "batch" ? "0 1px 3px rgba(37,99,235,0.12)" : "none",
+                      transition: "all 0.15s ease",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <span>⚡ Batch Mode</span>
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        background: scraperTab === "batch" ? "#eff6ff" : "#e2e8f0",
+                        color: scraperTab === "batch" ? "#1d4ed8" : "#475569",
+                        padding: "1px 6px",
+                        borderRadius: "10px",
+                      }}
+                    >
+                      3x Parallel
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Scrollable Body Container */}
+              <div
+                className="modal-dialog-body"
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: "auto",
+                  padding: "16px 22px",
+                }}
+              >
+                {scraperTab === "single" ? (
+                <>
+                  {/* 1. Target Country Dropdown */}
+                  <div className="modal-form-group" style={{ marginBottom: "16px" }}>
+                    <label className="modal-label">Target Country / Market</label>
+                    <div className="input-with-icon-wrapper">
+                      <Globe size={15} className="input-icon-left" />
+                      <select
+                        value={scrapeCountry}
+                        onChange={(e) => {
+                          setScrapeCountry(e.target.value);
+                          const codeMap: Record<string, string> = {
+                            World: "000",
+                            India: "699",
+                            Germany: "276",
+                            Vietnam: "704",
+                            "United States": "842",
+                            "United Arab Emirates": "784",
+                            China: "156",
+                            "United Kingdom": "826",
+                            Brazil: "076",
+                            Singapore: "702",
+                            France: "251",
+                            Italy: "381",
+                            Japan: "392",
+                            Canada: "124",
+                            Australia: "036",
+                            Turkey: "792",
+                            Indonesia: "360",
+                            Malaysia: "458",
+                            "South Korea": "410",
+                            Thailand: "764",
+                            Spain: "724",
+                            Netherlands: "528",
+                            "Saudi Arabia": "682",
+                          };
+                          setScrapeCountryCode(codeMap[e.target.value] || "000");
                         }}
+                        className="modal-select"
                       >
-                        Direct API
+                        <option value="World">🌍 World (All Global Markets - Code 000)</option>
+                        <option value="India">🇮🇳 India (Top Global Exporter Hub)</option>
+                        <option value="Germany">🇩🇪 Germany (European Commerce)</option>
+                        <option value="Vietnam">🇻🇳 Vietnam (Southeast Asia)</option>
+                        <option value="United States">🇺🇸 United States (North America)</option>
+                        <option value="United Arab Emirates">🇦🇪 United Arab Emirates (Middle East)</option>
+                        <option value="China">🇨🇳 China (East Asia)</option>
+                        <option value="United Kingdom">🇬🇧 United Kingdom (UK)</option>
+                        <option value="Brazil">🇧🇷 Brazil (South America)</option>
+                        <option value="Singapore">🇸🇬 Singapore (Global Trading Hub)</option>
+                        <option value="France">🇫🇷 France</option>
+                        <option value="Italy">🇮🇹 Italy</option>
+                        <option value="Japan">🇯🇵 Japan</option>
+                        <option value="Canada">🇨🇦 Canada</option>
+                        <option value="Australia">🇦🇺 Australia</option>
+                        <option value="Turkey">🇹🇷 Turkey</option>
+                        <option value="Indonesia">🇮🇩 Indonesia</option>
+                        <option value="Malaysia">🇲🇾 Malaysia</option>
+                        <option value="South Korea">🇰🇷 South Korea</option>
+                        <option value="Thailand">🇹🇭 Thailand</option>
+                        <option value="Spain">🇪🇸 Spain</option>
+                        <option value="Netherlands">🇳🇱 Netherlands</option>
+                        <option value="Saudi Arabia">🇸🇦 Saudi Arabia</option>
+                      </select>
+                    </div>
+                    {/* Quick Country Pills */}
+                    <div className="quick-pill-container">
+                      {[
+                        { label: "🌍 World", val: "World", code: "000" },
+                        { label: "🇮🇳 India", val: "India", code: "699" },
+                        { label: "🇩🇪 Germany", val: "Germany", code: "276" },
+                        { label: "🇻🇳 Vietnam", val: "Vietnam", code: "704" },
+                        { label: "🇺🇸 USA", val: "United States", code: "842" },
+                        { label: "🇦🇪 UAE", val: "United Arab Emirates", code: "784" },
+                        { label: "🇨🇳 China", val: "China", code: "156" },
+                      ].map((c) => (
+                        <button
+                          key={c.val}
+                          type="button"
+                          onClick={() => {
+                            setScrapeCountry(c.val);
+                            setScrapeCountryCode(c.code);
+                          }}
+                          className={`quick-pill ${scrapeCountry.toLowerCase() === c.val.toLowerCase() ? "active" : ""}`}
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2. Custom HS Code Input & Commodities */}
+                  <div className="modal-form-group" style={{ marginBottom: "16px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                      <label className="modal-label" style={{ margin: 0 }}>HS Code & Commodity Sector</label>
+                      <span style={{ fontSize: "11px", color: "#2563eb", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
+                        <CheckCircle2 size={12} style={{ color: "#16a34a" }} /> Zero-Blank Guarantees
                       </span>
                     </div>
-                    <p style={{ fontSize: "12px", color: "var(--text-secondary)", margin: "2px 0 0 0" }}>
-                      Extract verified exporter directories with director names & phone contacts
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setIsScraperModalOpen(false)}
-                  className="mini-icon-btn"
-                  style={{ borderRadius: "8px", width: "30px", height: "30px" }}
-                >
-                  <X size={16} />
-                </button>
-              </div>
 
-              {/* 1. Target Country Dropdown */}
-              <div className="modal-form-group" style={{ marginBottom: "16px" }}>
-                <label className="modal-label">Target Country / Market</label>
-                <div className="input-with-icon-wrapper">
-                  <Globe size={15} className="input-icon-left" />
-                  <select
-                    value={scrapeCountry}
-                    onChange={(e) => {
-                      setScrapeCountry(e.target.value);
-                      const codeMap: Record<string, string> = {
-                        World: "000",
-                        India: "699",
-                        Germany: "276",
-                        Vietnam: "704",
-                        "United States": "842",
-                        "United Arab Emirates": "784",
-                        China: "156",
-                        "United Kingdom": "826",
-                        Brazil: "076",
-                        Singapore: "702",
-                        France: "251",
-                        Italy: "381",
-                        Japan: "392",
-                        Canada: "124",
-                        Australia: "036",
-                        Turkey: "792",
-                        Indonesia: "360",
-                        Malaysia: "458",
-                        "South Korea": "410",
-                        Thailand: "764",
-                        Spain: "724",
-                        Netherlands: "528",
-                        "Saudi Arabia": "682",
-                      };
-                      setScrapeCountryCode(codeMap[e.target.value] || "000");
-                    }}
-                    className="modal-select"
-                  >
-                    <option value="World">🌍 World (All Global Markets - Code 000)</option>
-                    <option value="India">🇮🇳 India (Top Global Exporter Hub)</option>
-                    <option value="Germany">🇩🇪 Germany (European Commerce)</option>
-                    <option value="Vietnam">🇻🇳 Vietnam (Southeast Asia)</option>
-                    <option value="United States">🇺🇸 United States (North America)</option>
-                    <option value="United Arab Emirates">🇦🇪 United Arab Emirates (Middle East)</option>
-                    <option value="China">🇨🇳 China (East Asia)</option>
-                    <option value="United Kingdom">🇬🇧 United Kingdom (UK)</option>
-                    <option value="Brazil">🇧🇷 Brazil (South America)</option>
-                    <option value="Singapore">🇸🇬 Singapore (Global Trading Hub)</option>
-                    <option value="France">🇫🇷 France</option>
-                    <option value="Italy">🇮🇹 Italy</option>
-                    <option value="Japan">🇯🇵 Japan</option>
-                    <option value="Canada">🇨🇦 Canada</option>
-                    <option value="Australia">🇦🇺 Australia</option>
-                    <option value="Turkey">🇹🇷 Turkey</option>
-                    <option value="Indonesia">🇮🇩 Indonesia</option>
-                    <option value="Malaysia">🇲🇾 Malaysia</option>
-                    <option value="South Korea">🇰🇷 South Korea</option>
-                    <option value="Thailand">🇹🇭 Thailand</option>
-                    <option value="Spain">🇪🇸 Spain</option>
-                    <option value="Netherlands">🇳🇱 Netherlands</option>
-                    <option value="Saudi Arabia">🇸🇦 Saudi Arabia</option>
-                  </select>
-                </div>
-                {/* Quick Country Pills */}
-                <div className="quick-pill-container">
-                  {[
-                    { label: "🌍 World", val: "World", code: "000" },
-                    { label: "🇮🇳 India", val: "India", code: "699" },
-                    { label: "🇩🇪 Germany", val: "Germany", code: "276" },
-                    { label: "🇻🇳 Vietnam", val: "Vietnam", code: "704" },
-                    { label: "🇺🇸 USA", val: "United States", code: "842" },
-                    { label: "🇦🇪 UAE", val: "United Arab Emirates", code: "784" },
-                    { label: "🇨🇳 China", val: "China", code: "156" },
-                  ].map((c) => (
-                    <button
-                      key={c.val}
-                      type="button"
-                      onClick={() => {
-                        setScrapeCountry(c.val);
-                        setScrapeCountryCode(c.code);
-                      }}
-                      className={`quick-pill ${scrapeCountry.toLowerCase() === c.val.toLowerCase() ? "active" : ""}`}
-                    >
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 2. Custom HS Code Input & Commodities */}
-              <div className="modal-form-group" style={{ marginBottom: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                  <label className="modal-label" style={{ margin: 0 }}>HS Code & Commodity Sector</label>
-                  <span style={{ fontSize: "11px", color: "#2563eb", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
-                    <CheckCircle2 size={12} style={{ color: "#16a34a" }} /> Zero-Blank Guarantees
-                  </span>
-                </div>
-
-                <div style={{ marginBottom: "8px" }}>
-                  <input
-                    type="text"
-                    placeholder="Type ANY 4 or 6 digit HS Code (e.g. 310210, 5208, 0902)..."
-                    value={customHsInput}
-                    onChange={(e) => {
-                      setCustomHsInput(e.target.value);
-                      setScrapeHsCode(e.target.value);
-                    }}
-                    className="modal-select"
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "13px",
-                      fontWeight: 700,
-                      color: "#0f172a",
-                      background: "#f8fafc",
-                      borderColor: "#93c5fd",
-                    }}
-                  />
-                </div>
-
-                {/* Quick Commodity Pills */}
-                <div className="quick-pill-container" style={{ marginTop: "6px" }}>
-                  {[
-                    { label: "🌱 Urea (310210)", hs: "310210" },
-                    { label: "🧵 Cotton (5208)", hs: "5208" },
-                    { label: "🫖 Tea (0902)", hs: "0902" },
-                    { label: "🌶️ Spices (0910)", hs: "0910" },
-                    { label: "🌾 Rice (1006)", hs: "1006" },
-                    { label: "☕ Coffee (0901)", hs: "0901" },
-                    { label: "💊 Pharma (3004)", hs: "3004" },
-                    { label: "🏗️ Steel (7208)", hs: "7208" },
-                  ].map((g) => {
-                    const isAct = customHsInput.trim() === g.hs;
-                    return (
-                      <button
-                        key={g.hs}
-                        type="button"
-                        onClick={() => {
-                          setCustomHsInput(g.hs);
-                          setScrapeHsCode(g.hs);
+                    <div style={{ marginBottom: "8px" }}>
+                      <input
+                        type="text"
+                        placeholder="Type ANY 4 or 6 digit HS Code (e.g. 310210, 5208, 0902)..."
+                        value={customHsInput}
+                        onChange={(e) => {
+                          setCustomHsInput(e.target.value);
+                          setScrapeHsCode(e.target.value);
                         }}
-                        className={`quick-pill ${isAct ? "active" : ""}`}
-                      >
-                        {g.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* 3. Trade Flow Dropdown */}
-              <div className="modal-form-group" style={{ marginBottom: "16px" }}>
-                <label className="modal-label">Trade Flow</label>
-                <select
-                  value={scrapeTradeFlow}
-                  onChange={(e) => setScrapeTradeFlow(e.target.value as "exports" | "imports")}
-                  className="modal-select"
-                  style={{ fontWeight: 600 }}
-                >
-                  <option value="imports">↙ Importers / Buyers (Code I)</option>
-                  <option value="exports">↗ Exporters / Suppliers (Code E)</option>
-                </select>
-              </div>
-
-              {/* 3b. TradeMap Session Status & One-Click Browser Verification */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "10px",
-                  padding: "10px 14px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "10px",
-                  marginBottom: "14px",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <Globe size={15} style={{ color: "#2563eb" }} />
-                  <div style={{ fontSize: "12px", color: "#1e293b", fontWeight: 500 }}>
-                    <strong>TradeMap Profile:</strong> Persistent Session
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleOpenBrowserLogin}
-                  disabled={isOpeningBrowser}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "5px",
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    padding: "5px 12px",
-                    background: "#eff6ff",
-                    color: "#1d4ed8",
-                    border: "1px solid #bfdbfe",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                  }}
-                  title="Opens TradeMap in Chrome to verify login or sign in"
-                >
-                  <ExternalLink size={12} />
-                  {isOpeningBrowser ? "Opening Chrome..." : "Verify / Open Login"}
-                </button>
-              </div>
-
-              {/* 4. MongoDB Atlas Database Banner */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "10px",
-                  padding: "10px 14px",
-                  background: "#f0fdf4",
-                  border: "1px solid #bbf7d0",
-                  borderRadius: "10px",
-                  marginBottom: "16px",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <ShieldCheck size={16} style={{ color: "#16a34a" }} />
-                  <span style={{ fontSize: "12px", color: "#166534", fontWeight: 600 }}>
-                    Target Database: MongoDB Atlas Cloud (tradescan)
-                  </span>
-                </div>
-                <span style={{ fontSize: "11px", background: "#dcfce7", color: "#15803d", padding: "2px 8px", borderRadius: "12px", fontWeight: 700 }}>
-                  Active 🟢
-                </span>
-              </div>
-
-              {/* 5. Live Logs Console */}
-              {scrapeLogs && (
-                <div
-                  style={{
-                    background: "#020617",
-                    color: "#38bdf8",
-                    borderRadius: "10px",
-                    padding: "14px",
-                    fontSize: "11.5px",
-                    fontFamily: "var(--font-mono)",
-                    maxHeight: "150px",
-                    overflowY: "auto",
-                    marginBottom: "16px",
-                    whiteSpace: "pre-wrap",
-                    border: "1px solid #1e293b",
-                    boxShadow: "inset 0 2px 4px rgba(0,0,0,0.5)",
-                    lineHeight: "1.5",
-                  }}
-                >
-                  {scrapeLogs}
-                </div>
-              )}
-
-              {/* Direct Excel Download for this Specific Scrape */}
-              {scrapeLogs && (scrapeLogs.includes("JOB COMPLETE") || scrapeLogs.includes("Done]")) && (
-                <div
-                  style={{
-                    marginBottom: "16px",
-                    padding: "14px 16px",
-                    background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)",
-                    borderRadius: "12px",
-                    border: "1.5px solid #22c55e",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "10px",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 700, color: "#15803d", fontSize: "14px", display: "flex", alignItems: "center", gap: "6px" }}>
-                      <span>📊</span>
-                      <span>Separate Excel Ready (No Mixing)!</span>
+                        className="modal-select"
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: "13px",
+                          fontWeight: 700,
+                          color: "#0f172a",
+                          background: "#f8fafc",
+                          borderColor: "#93c5fd",
+                        }}
+                      />
                     </div>
-                    <div style={{ fontSize: "12px", color: "#166534", marginTop: "2px" }}>
-                      Download only this commodity (HS {customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode}) without mixing with other databases.
+
+                    {/* Quick Commodity Pills */}
+                    <div className="quick-pill-container" style={{ marginTop: "6px" }}>
+                      {[
+                        { label: "🌱 Urea (310210)", hs: "310210" },
+                        { label: "🧵 Cotton (5208)", hs: "5208" },
+                        { label: "🫖 Tea (0902)", hs: "0902" },
+                        { label: "🌶️ Spices (0910)", hs: "0910" },
+                        { label: "🌾 Rice (1006)", hs: "1006" },
+                        { label: "☕ Coffee (0901)", hs: "0901" },
+                        { label: "💊 Pharma (3004)", hs: "3004" },
+                        { label: "🏗️ Steel (7208)", hs: "7208" },
+                      ].map((g) => {
+                        const isAct = customHsInput.trim() === g.hs;
+                        return (
+                          <button
+                            key={g.hs}
+                            type="button"
+                            onClick={() => {
+                              setCustomHsInput(g.hs);
+                              setScrapeHsCode(g.hs);
+                            }}
+                            className={`quick-pill ${isAct ? "active" : ""}`}
+                          >
+                            {g.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <button
-                      onClick={() => {
-                        const finalHs = customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode || "310210";
-                        handleExport("xlsx", finalHs, scrapeCountry);
-                      }}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        background: "#16a34a",
-                        color: "#ffffff",
-                        fontWeight: 700,
-                        fontSize: "13px",
-                        padding: "8px 16px",
-                        borderRadius: "8px",
-                        border: "none",
-                        cursor: "pointer",
-                        boxShadow: "0 2px 8px rgba(22, 163, 74, 0.3)",
-                      }}
-                    >
-                      <FileSpreadsheet size={15} />
-                      Download HS {customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode} Excel
-                    </button>
-                    <button
-                      onClick={() => {
-                        const finalHs = customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode || "310210";
-                        handleExport("csv", finalHs, scrapeCountry);
-                      }}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        background: "#ffffff",
-                        color: "#15803d",
-                        fontWeight: 700,
-                        fontSize: "13px",
-                        padding: "8px 12px",
-                        borderRadius: "8px",
-                        border: "1px solid #86efac",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <Download size={14} />
-                      CSV
-                    </button>
-                  </div>
-                </div>
-              )}
 
-              {/* 6. Modal Footer Action Buttons */}
-              <div style={{ display: "flex", gap: "10px" }}>
-                {isScraping ? (
-                  <>
-                    <button
-                      onClick={handleStopScrape}
-                      className="action-btn"
-                      style={{
-                        flex: 1,
-                        height: "44px",
-                        background: "#fee2e2",
-                        color: "#991b1b",
-                        border: "1px solid #fecaca",
-                        fontWeight: 700,
-                        borderRadius: "10px",
-                      }}
+                  {/* 3. Trade Flow Dropdown */}
+                  <div className="modal-form-group" style={{ marginBottom: "16px" }}>
+                    <label className="modal-label">Trade Flow</label>
+                    <select
+                      value={scrapeTradeFlow}
+                      onChange={(e) => setScrapeTradeFlow(e.target.value as "exports" | "imports")}
+                      className="modal-select"
+                      style={{ fontWeight: 600 }}
                     >
-                      🛑 Stop Extraction
-                    </button>
+                      <option value="imports">↙ Importers / Buyers (Code I)</option>
+                      <option value="exports">↗ Exporters / Suppliers (Code E)</option>
+                    </select>
+                  </div>
+
+                  {/* 3b. TradeMap Session Status & One-Click Browser Verification */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "10px",
+                      padding: "10px 14px",
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "10px",
+                      marginBottom: "14px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <Globe size={15} style={{ color: "#2563eb" }} />
+                      <div style={{ fontSize: "12px", color: "#1e293b", fontWeight: 500 }}>
+                        <strong>TradeMap Profile:</strong> Persistent Session
+                      </div>
+                    </div>
                     <button
-                      disabled
-                      className="action-btn primary"
+                      type="button"
+                      onClick={handleOpenBrowserLogin}
+                      disabled={isOpeningBrowser}
                       style={{
-                        flex: 1.6,
-                        height: "44px",
-                        justifyContent: "center",
-                        borderRadius: "10px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        fontSize: "11px",
                         fontWeight: 600,
-                        background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
+                        padding: "5px 12px",
+                        background: "#eff6ff",
+                        color: "#1d4ed8",
+                        border: "1px solid #bfdbfe",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                      }}
+                      title="Opens TradeMap in Chrome to verify login or sign in"
+                    >
+                      <ExternalLink size={12} />
+                      {isOpeningBrowser ? "Opening Chrome..." : "Verify / Open Login"}
+                    </button>
+                  </div>
+
+                  {/* 4. MongoDB Atlas Database Banner */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "10px",
+                      padding: "10px 14px",
+                      background: "#f0fdf4",
+                      border: "1px solid #bbf7d0",
+                      borderRadius: "10px",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <ShieldCheck size={16} style={{ color: "#16a34a" }} />
+                      <span style={{ fontSize: "12px", color: "#166534", fontWeight: 600 }}>
+                        Target Database: MongoDB Atlas Cloud (tradescan)
+                      </span>
+                    </div>
+                    <span style={{ fontSize: "11px", background: "#dcfce7", color: "#15803d", padding: "2px 8px", borderRadius: "12px", fontWeight: 700 }}>
+                      Active 🟢
+                    </span>
+                  </div>
+
+                  {/* 5. Live Logs Console */}
+                  {scrapeLogs && (
+                    <div
+                      style={{
+                        background: "#020617",
+                        color: "#38bdf8",
+                        borderRadius: "10px",
+                        padding: "14px",
+                        fontSize: "11.5px",
+                        fontFamily: "var(--font-mono)",
+                        maxHeight: "150px",
+                        overflowY: "auto",
+                        marginBottom: "16px",
+                        whiteSpace: "pre-wrap",
+                        border: "1px solid #1e293b",
+                        boxShadow: "inset 0 2px 4px rgba(0,0,0,0.5)",
+                        lineHeight: "1.5",
                       }}
                     >
-                      <RefreshCw size={15} className="spin" />
-                      Running... (+{activeJobRecords} Added)
-                    </button>
-                  </>
+                      {scrapeLogs}
+                    </div>
+                  )}
+
+                  {/* Direct Excel Download for this Specific Scrape */}
+                  {scrapeLogs && (scrapeLogs.includes("JOB COMPLETE") || scrapeLogs.includes("Done]")) && (
+                    <div
+                      style={{
+                        marginBottom: "16px",
+                        padding: "14px 16px",
+                        background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)",
+                        borderRadius: "12px",
+                        border: "1.5px solid #22c55e",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "10px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 700, color: "#15803d", fontSize: "14px", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span>📊</span>
+                          <span>Separate Excel Ready (No Mixing)!</span>
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#166534", marginTop: "2px" }}>
+                          Download only this commodity (HS {customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode}) without mixing with other databases.
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button
+                          onClick={() => {
+                            const finalHs = customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode || "310210";
+                            handleExport("xlsx", finalHs, scrapeCountry);
+                          }}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            background: "#16a34a",
+                            color: "#ffffff",
+                            fontWeight: 700,
+                            fontSize: "13px",
+                            padding: "8px 16px",
+                            borderRadius: "8px",
+                            border: "none",
+                            cursor: "pointer",
+                            boxShadow: "0 2px 8px rgba(22, 163, 74, 0.3)",
+                          }}
+                        >
+                          <FileSpreadsheet size={15} />
+                          Download HS {customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode} Excel
+                        </button>
+                        <button
+                          onClick={() => {
+                            const finalHs = customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode || "310210";
+                            handleExport("csv", finalHs, scrapeCountry);
+                          }}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            background: "#ffffff",
+                            color: "#15803d",
+                            fontWeight: 700,
+                            fontSize: "13px",
+                            padding: "8px 12px",
+                            borderRadius: "8px",
+                            border: "1px solid #86efac",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Download size={14} />
+                          CSV
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* ========================================================== */
+                /* ⚡ BATCH MODE (MULTI-ACCOUNT PARALLEL RUNNER)               */
+                /* ========================================================== */
+                <>
+                  {/* Account Login Setup Section */}
+                  <div
+                    style={{
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "12px",
+                      padding: "12px 14px",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                      <div style={{ fontSize: "12px", fontWeight: 700, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span>🔐</span>
+                        <span>TradeMap Multi-Account Setup (One-Time Login)</span>
+                      </div>
+                      <span style={{ fontSize: "11px", color: "#64748b" }}>Isolated Chrome Profiles</span>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+                      {[1, 2, 3].map((wId) => (
+                        <button
+                          key={wId}
+                          type="button"
+                          onClick={() => handleSetupWorkerAccount(wId)}
+                          disabled={openingWorkerId === wId}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "6px",
+                            padding: "7px 10px",
+                            borderRadius: "8px",
+                            fontSize: "11.5px",
+                            fontWeight: 600,
+                            border: "1px solid #cbd5e1",
+                            background: "#ffffff",
+                            color: "#334155",
+                            cursor: "pointer",
+                            transition: "all 0.15s ease",
+                          }}
+                          title={`Opens Chrome profile for Account #${wId} to log in`}
+                        >
+                          <ExternalLink size={12} />
+                          <span>{openingWorkerId === wId ? "Opening..." : `Account #${wId} Login`}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Worker Concurrency Selector */}
+                  <div className="modal-form-group" style={{ marginBottom: "14px" }}>
+                    <label className="modal-label">Parallel Worker Accounts (Turn-by-Turn)</label>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
+                      {[
+                        { count: 1, label: "1 Account", tag: "Sequential" },
+                        { count: 2, label: "2 Accounts ⚡", tag: "2x Parallel" },
+                        { count: 3, label: "3 Accounts 🚀", tag: "3x Super Fast" },
+                      ].map((w) => (
+                        <button
+                          key={w.count}
+                          type="button"
+                          onClick={() => setBatchWorkerCount(w.count)}
+                          style={{
+                            padding: "8px 10px",
+                            borderRadius: "8px",
+                            border: batchWorkerCount === w.count ? "1.5px solid #2563eb" : "1px solid #e2e8f0",
+                            background: batchWorkerCount === w.count ? "#eff6ff" : "#ffffff",
+                            color: batchWorkerCount === w.count ? "#1d4ed8" : "#475569",
+                            fontWeight: 600,
+                            fontSize: "12px",
+                            cursor: "pointer",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "2px",
+                          }}
+                        >
+                          <span>{w.label}</span>
+                          <span style={{ fontSize: "10px", color: batchWorkerCount === w.count ? "#2563eb" : "#94a3b8" }}>
+                            {w.tag}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* HS Codes List Textarea with Live Task Preview */}
+                  <div className="modal-form-group" style={{ marginBottom: "14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                      <label className="modal-label" style={{ margin: 0 }}>
+                        List of Tasks (HS Code, Country, Trade Flow)
+                      </label>
+                      <span style={{ fontSize: "11px", color: "#2563eb", fontWeight: 600 }}>
+                        {batchHsInput.split(/\r?\n/).filter((s) => s.trim()).length} Tasks Queued
+                      </span>
+                    </div>
+                    <textarea
+                      rows={4}
+                      value={batchHsInput}
+                      onChange={(e) => setBatchHsInput(e.target.value)}
+                      placeholder={"Type or paste line-by-line, for example:\n0101, India, Exporters\n1006, World, Importers\n5208, Germany, Exporters\n3004 (uses fallback below)"}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "10px",
+                        border: "1px solid #cbd5e1",
+                        fontSize: "12.5px",
+                        fontFamily: "var(--font-mono)",
+                        color: "#0f172a",
+                        background: "#ffffff",
+                        outline: "none",
+                        resize: "vertical",
+                        lineHeight: "1.6",
+                      }}
+                    />
+
+                    {/* Live Parsed Preview Badges */}
+                    {(() => {
+                      const previews = batchHsInput
+                        .split(/\r?\n/)
+                        .map((line) => {
+                          const parts = line.split(/[,|\t]+/).map((s) => s.trim()).filter(Boolean);
+                          const code = parts[0] ? parts[0].replace(/[^\w]/g, "") : "";
+                          if (!code) return null;
+                          let country = scrapeCountry || "India";
+                          let flow = scrapeTradeFlow === "exports" ? "Exporters" : "Importers";
+
+                          if (parts.length >= 2) {
+                            const p2 = parts[1].toLowerCase();
+                            if (p2.includes("exp") || p2 === "e") flow = "Exporters";
+                            else if (p2.includes("imp") || p2 === "i") flow = "Importers";
+                            else country = parts[1];
+                          }
+                          if (parts.length >= 3) {
+                            const p3 = parts[2].toLowerCase();
+                            if (p3.includes("exp") || p3 === "e") flow = "Exporters";
+                            else if (p3.includes("imp") || p3 === "i") flow = "Importers";
+                          }
+                          return { code, country, flow };
+                        })
+                        .filter(Boolean);
+
+                      if (previews.length === 0) return null;
+
+                      return (
+                        <div style={{ marginTop: "8px" }}>
+                          <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
+                            Live Task Preview:
+                          </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", maxHeight: "80px", overflowY: "auto" }}>
+                            {previews.map((item, idx) => (
+                              <span
+                                key={idx}
+                                style={{
+                                  fontSize: "11px",
+                                  background: "#f1f5f9",
+                                  color: "#1e293b",
+                                  border: "1px solid #cbd5e1",
+                                  padding: "3px 8px",
+                                  borderRadius: "6px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "5px",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                <span style={{ color: "#2563eb" }}>HS {item!.code}</span>
+                                <span style={{ color: "#94a3b8" }}>•</span>
+                                <span>📍 {item!.country}</span>
+                                <span style={{ color: "#94a3b8" }}>•</span>
+                                <span style={{ color: item!.flow === "Exporters" ? "#7c3aed" : "#059669" }}>
+                                  {item!.flow}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Fallback Target Market & Trade Flow */}
+                  <div style={{ background: "#f8fafc", padding: "10px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", marginBottom: "14px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", marginBottom: "6px" }}>
+                      Fallback Settings (Used if Country/Flow is not specified in a line above):
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                      <div>
+                        <label className="modal-label" style={{ fontSize: "11px" }}>Default Country</label>
+                        <select
+                          value={scrapeCountry}
+                          onChange={(e) => {
+                            setScrapeCountry(e.target.value);
+                            setScrapeCountryCode(e.target.value === "India" ? "699" : "000");
+                          }}
+                          className="modal-select"
+                          style={{ height: "36px", fontSize: "12px" }}
+                        >
+                          <option value="India">🇮🇳 India (ISO 699)</option>
+                          <option value="World">🌍 World (000)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="modal-label" style={{ fontSize: "11px" }}>Default Flow</label>
+                        <select
+                          value={scrapeTradeFlow}
+                          onChange={(e) => setScrapeTradeFlow(e.target.value as "exports" | "imports")}
+                          className="modal-select"
+                          style={{ height: "36px", fontSize: "12px", fontWeight: 600 }}
+                        >
+                          <option value="exports">↗ Exporters / Suppliers</option>
+                          <option value="imports">↙ Importers / Buyers</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Active Parallel Workers Status */}
+                  {batchStatus?.active && batchStatus.active.length > 0 && (
+                    <div style={{ marginBottom: "14px" }}>
+                      <div style={{ fontSize: "12px", fontWeight: 700, color: "#1e293b", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <RefreshCw size={13} className="spin" style={{ color: "#2563eb" }} />
+                        <span>Active Parallel Workers ({batchStatus.active.length} running):</span>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        {batchStatus.active.map((w: any) => (
+                          <div
+                            key={w.workerId}
+                            style={{
+                              background: "#eff6ff",
+                              border: "1px solid #bfdbfe",
+                              borderRadius: "8px",
+                              padding: "8px 12px",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              fontSize: "12px",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <span style={{ fontWeight: 700, color: "#1d4ed8" }}>Worker #{w.workerId}</span>
+                              <span style={{ background: "#dbeafe", color: "#1e40af", padding: "1px 7px", borderRadius: "10px", fontSize: "11px", fontWeight: 700 }}>
+                                HS {w.hsCode}
+                              </span>
+                            </div>
+                            <div style={{ color: "#475569", fontSize: "11.5px" }}>
+                              Page {w.page}/{w.totalPages} • <strong>{w.totalExtracted}</strong> verified profiles
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Completed HS Codes & Downloads */}
+                  {batchStatus?.completed && batchStatus.completed.length > 0 && (
+                    <div style={{ marginBottom: "16px", maxHeight: "150px", overflowY: "auto" }}>
+                      <div style={{ fontSize: "12px", fontWeight: 700, color: "#15803d", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <CheckCircle size={13} style={{ color: "#16a34a" }} />
+                        <span>Completed HS Codes ({batchStatus.completed.length}):</span>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                        {batchStatus.completed.map((c: any) => (
+                          <button
+                            key={c.hsCode}
+                            type="button"
+                            onClick={() => handleExport("xlsx", c.hsCode, scrapeCountry)}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              padding: "5px 10px",
+                              background: "#f0fdf4",
+                              border: "1px solid #86efac",
+                              borderRadius: "7px",
+                              fontSize: "11.5px",
+                              fontWeight: 600,
+                              color: "#166534",
+                              cursor: "pointer",
+                            }}
+                            title={`Download dedicated Excel for HS ${c.hsCode}`}
+                          >
+                            <FileSpreadsheet size={13} style={{ color: "#16a34a" }} />
+                            <span>HS {c.hsCode} ({c.count} records)</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                </>
+              )}
+              </div>
+
+              {/* Pinned Footer Action Buttons - ALWAYS PINNED AT BOTTOM */}
+              <div
+                className="modal-dialog-footer"
+                style={{
+                  padding: "14px 22px 18px 22px",
+                  borderTop: "1px solid #f1f5f9",
+                  background: "#ffffff",
+                  flexShrink: 0,
+                  display: "flex",
+                  gap: "10px",
+                }}
+              >
+                {scraperTab === "single" ? (
+                  isScraping ? (
+                    <>
+                      <button
+                        onClick={handleStopScrape}
+                        className="action-btn"
+                        style={{
+                          flex: 1,
+                          height: "44px",
+                          background: "#fee2e2",
+                          color: "#991b1b",
+                          border: "1px solid #fecaca",
+                          fontWeight: 700,
+                          borderRadius: "10px",
+                        }}
+                      >
+                        🛑 Stop Extraction
+                      </button>
+                      <button
+                        disabled
+                        className="action-btn primary"
+                        style={{
+                          flex: 1.6,
+                          height: "44px",
+                          justifyContent: "center",
+                          borderRadius: "10px",
+                          fontWeight: 600,
+                          background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
+                        }}
+                      >
+                        <RefreshCw size={15} className="spin" />
+                        Running... (+{activeJobRecords} Added)
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => setIsScraperModalOpen(false)}
+                        className="action-btn"
+                        style={{
+                          flex: 1,
+                          height: "44px",
+                          justifyContent: "center",
+                          borderRadius: "10px",
+                          fontWeight: 600,
+                        }}
+                      >
+                        Close
+                      </button>
+                      <button
+                        onClick={handleTriggerScrape}
+                        className="action-btn primary"
+                        style={{
+                          flex: 1.6,
+                          height: "44px",
+                          justifyContent: "center",
+                          borderRadius: "10px",
+                          fontWeight: 700,
+                          background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                          boxShadow: "0 4px 12px rgba(37, 99, 235, 0.25)",
+                        }}
+                      >
+                        <Play size={14} fill="currentColor" />
+                        <span>Start Live Scraping</span>
+                      </button>
+                    </>
+                  )
                 ) : (
                   <>
                     <button
@@ -2059,7 +2575,9 @@ export default function Dashboard() {
                       Close
                     </button>
                     <button
-                      onClick={handleTriggerScrape}
+                      type="button"
+                      onClick={handleStartBatch}
+                      disabled={isStartingBatch || Boolean(batchStatus?.isRunning)}
                       className="action-btn primary"
                       style={{
                         flex: 1.6,
@@ -2067,12 +2585,24 @@ export default function Dashboard() {
                         justifyContent: "center",
                         borderRadius: "10px",
                         fontWeight: 700,
-                        background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
-                        boxShadow: "0 4px 14px rgba(15, 23, 42, 0.25)",
+                        background: batchStatus?.isRunning
+                          ? "#334155"
+                          : "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                        boxShadow: "0 4px 12px rgba(37, 99, 235, 0.25)",
+                        cursor: batchStatus?.isRunning ? "not-allowed" : "pointer",
                       }}
                     >
-                      <Play size={13} fill="currentColor" />
-                      🚀 Launch Background Scraper
+                      {batchStatus?.isRunning ? (
+                        <>
+                          <RefreshCw size={14} className="spin" />
+                          <span>Batch In Progress ({batchStatus?.pendingCount || 0} in queue)...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play size={14} fill="currentColor" />
+                          <span>Start {batchWorkerCount}x Parallel Batch Scrape</span>
+                        </>
+                      )}
                     </button>
                   </>
                 )}

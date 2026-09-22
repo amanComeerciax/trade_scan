@@ -53,3 +53,9 @@ next-env.d.ts
 *.log
 *.png
 
+# exports and temporary batch files
+exports/
+scripts/.*state*.json
+scripts/.*tasks*.json
+scripts/*.html
+

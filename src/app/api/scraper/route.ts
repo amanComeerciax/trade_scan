@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { spawn, ChildProcess } from "child_process";
 import path from "path";
+import fs from "fs";
 
 // Global process tracking across requests in Node server
 const globalForScraper = globalThis as unknown as {
@@ -47,17 +48,38 @@ export async function POST(request: Request) {
 
     // Action: Open visible Chrome with Scraper Profile for manual login check
     if (body.action === "open-browser") {
-      const profileDir = path.join(process.env.LOCALAPPDATA || "", "TradeScan-Scraper-Profile");
-      const targetUrl = "https://www.trademap.org/en/goods/companies/c/000/imports/p/310210";
-      spawn("chrome.exe", [`--user-data-dir=${profileDir}`, targetUrl], {
-        detached: true,
-        shell: true,
-        stdio: "ignore",
-      }).unref();
+      const workerId = body.workerId;
+      const profileDir = workerId
+        ? path.join(process.env.LOCALAPPDATA || "", `TradeScan-Profile-Worker-${workerId}`)
+        : path.join(process.env.LOCALAPPDATA || "", "TradeScan-Scraper-Profile");
+      const targetUrl = "https://www.trademap.org/en/goods/companies";
+
+      const candidatePaths = [
+        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+        "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+        path.join(process.env.LOCALAPPDATA || "", "Google\\Chrome\\Application\\chrome.exe"),
+      ];
+      const chromePath = candidatePaths.find((p) => fs.existsSync(p)) || "chrome.exe";
+
+      spawn(
+        chromePath,
+        [
+          `--user-data-dir=${profileDir}`,
+          "--new-window",
+          "--no-first-run",
+          "--no-default-browser-check",
+          targetUrl,
+        ],
+        {
+          detached: true,
+          shell: false,
+          stdio: "ignore",
+        }
+      ).unref();
 
       return NextResponse.json({
         success: true,
-        message: "Chrome browser opened on your desktop with TradeScan profile.",
+        message: `Chrome browser opened for Worker ${workerId || 'Default'}.`,
       });
     }
 

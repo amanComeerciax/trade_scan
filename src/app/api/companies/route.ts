@@ -44,17 +44,29 @@ async function getCachedHsList(): Promise<Array<{ hsCode: string; productCategor
     return metaCache.hsList;
   }
   try {
-    const hsCodesGroup = await prisma.companyProduct.groupBy({
-      by: ["hsCode", "productCategory"],
-      _count: { id: true },
+    const products = await prisma.companyProduct.findMany({
       where: { hsCode: { not: null } },
-      orderBy: { _count: { id: "desc" } },
+      select: { hsCode: true, companyId: true, productCategory: true },
     });
-    metaCache.hsList = hsCodesGroup.map((h) => ({
-      hsCode: h.hsCode as string,
-      productCategory: h.productCategory || `HS ${h.hsCode}`,
-      count: h._count.id,
-    }));
+    const hsMap: Record<string, { hsCode: string; productCategory: string; companies: Set<string> }> = {};
+    for (const p of products) {
+      if (!p.hsCode) continue;
+      if (!hsMap[p.hsCode]) {
+        hsMap[p.hsCode] = {
+          hsCode: p.hsCode,
+          productCategory: p.productCategory || `HS ${p.hsCode}`,
+          companies: new Set(),
+        };
+      }
+      hsMap[p.hsCode].companies.add(p.companyId);
+    }
+    metaCache.hsList = Object.values(hsMap)
+      .map((h) => ({
+        hsCode: h.hsCode,
+        productCategory: h.productCategory,
+        count: h.companies.size,
+      }))
+      .sort((a, b) => b.count - a.count);
     metaCache.hsListExp = now + 45000; // 45s cache
     return metaCache.hsList;
   } catch {
