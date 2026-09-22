@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { resolveCommodity } from "@/lib/aiParser";
 import { TradeScanLogo, TradeScanMark } from "@/components/TradeScanLogo";
 import {
@@ -191,6 +191,37 @@ export default function Dashboard() {
   const [isStartingBatch, setIsStartingBatch] = useState(false);
   const [openingWorkerId, setOpeningWorkerId] = useState<number | null>(null);
 
+  // 🔔 Floating Toast Notification State ("Data Aa Gaya")
+  const [notification, setNotification] = useState<{
+    id: string;
+    title: string;
+    message: string;
+    type?: "success" | "info" | "warning";
+    hsCode?: string | null;
+  } | null>(null);
+
+  const wasBatchRunningRef = useRef(false);
+
+  // 🎵 Soft audio chime on data arrival
+  const playSuccessChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12); // A5
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.6);
+    } catch {}
+  };
+
   // Poll batch scraper status
   useEffect(() => {
     let active = true;
@@ -202,7 +233,23 @@ export default function Dashboard() {
         if (active) {
           setBatchStatus(data);
           if (data.isRunning) {
+            wasBatchRunningRef.current = true;
             fetchData(page);
+            fetchStats();
+          } else if (wasBatchRunningRef.current) {
+            // 🎉 Batch just finished!
+            wasBatchRunningRef.current = false;
+            playSuccessChime();
+            const lastCompleted = data.completed?.[data.completed.length - 1];
+            const hsText = lastCompleted?.hsCode ? `HS ${lastCompleted.hsCode}` : "Batch";
+            setNotification({
+              id: Date.now().toString(),
+              title: `🎉 ${hsText} Data Extracted Successfully!`,
+              message: `Live data extraction completed! New verified company profiles have been added to your dashboard.`,
+              type: "success",
+              hsCode: lastCompleted?.hsCode || null,
+            });
+            fetchData(1);
             fetchStats();
           }
         }
@@ -479,6 +526,16 @@ export default function Dashboard() {
                 setIsScraping(false);
                 fetchData(1);
                 fetchStats();
+                if (statusData.job.status === "COMPLETED") {
+                  playSuccessChime();
+                  setNotification({
+                    id: Date.now().toString(),
+                    title: `🎉 HS ${finalHs} Data Extracted Successfully!`,
+                    message: `Extraction completed! ${statusData.job.recordsFound || ""} verified records have been loaded into your dashboard.`,
+                    type: "success",
+                    hsCode: finalHs,
+                  });
+                }
               }
             }
           } catch {}
@@ -2742,6 +2799,119 @@ export default function Dashboard() {
                 Delete
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* 🔔 Floating Completion Toast Notification ("Data Aa Gaya") */}
+      {notification && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "28px",
+            right: "28px",
+            zIndex: 999999,
+            maxWidth: "420px",
+            background: "#ffffff",
+            border: "1.5px solid #22c55e",
+            borderRadius: "16px",
+            boxShadow: "0 20px 45px -10px rgba(34, 197, 94, 0.35), 0 10px 20px -5px rgba(0, 0, 0, 0.08)",
+            padding: "16px 18px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px",
+            animation: "slideInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+            <div
+              style={{
+                width: "38px",
+                height: "38px",
+                borderRadius: "11px",
+                background: "#dcfce7",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                color: "#16a34a",
+              }}
+            >
+              <CheckCircle size={22} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>
+                  {notification.title}
+                </h4>
+                <button
+                  onClick={() => setNotification(null)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#94a3b8",
+                    cursor: "pointer",
+                    padding: "2px",
+                    display: "flex",
+                    borderRadius: "4px",
+                  }}
+                  title="Close"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#475569", lineHeight: 1.5 }}>
+                {notification.message}
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: "8px", marginTop: "2px", paddingLeft: "50px" }}>
+            {notification.hsCode && (
+              <button
+                onClick={() => {
+                  setSelectedHsCode(notification.hsCode || "");
+                  setNotification(null);
+                }}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "8px",
+                  background: "#22c55e",
+                  color: "#ffffff",
+                  fontSize: "11.5px",
+                  fontWeight: 700,
+                  border: "none",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                }}
+              >
+                <span>View HS {notification.hsCode}</span>
+                <span>→</span>
+              </button>
+            )}
+            <button
+              onClick={() => {
+                handleExport("xlsx", notification.hsCode || undefined);
+                setNotification(null);
+              }}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "8px",
+                background: "#f0fdf4",
+                color: "#166534",
+                border: "1px solid #bbf7d0",
+                fontSize: "11.5px",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
+            >
+              <FileSpreadsheet size={13} />
+              <span>Export Excel</span>
+            </button>
           </div>
         </div>
       )}
