@@ -223,7 +223,7 @@ export default function Dashboard() {
       gain.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.6);
-    } catch {}
+    } catch { }
   };
 
   // Poll batch scraper status with fast frequency during active scraping
@@ -257,7 +257,7 @@ export default function Dashboard() {
             fetchStats();
           }
         }
-      } catch {}
+      } catch { }
     };
 
     checkBatch();
@@ -339,7 +339,7 @@ export default function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "open-browser", workerId: wId }),
       });
-    } catch {}
+    } catch { }
     setTimeout(() => setOpeningWorkerId(null), 3000);
   };
 
@@ -569,7 +569,7 @@ export default function Dashboard() {
                 }
               }
             }
-          } catch {}
+          } catch { }
         }, 2500);
       } else {
         setScrapeLogs((prev) => `${prev}\n\n✗ FAILED: ${json.error || "Could not launch job"}`);
@@ -1497,9 +1497,8 @@ export default function Dashboard() {
                       </td>
                       <td>
                         <span
-                          className={`badge-outcome ${
-                            isExporter ? "exporter" : "importer"
-                          }`}
+                          className={`badge-outcome ${isExporter ? "exporter" : "importer"
+                            }`}
                         >
                           {isExporter ? "Exporter" : "Importer"}
                         </span>
@@ -1921,7 +1920,7 @@ export default function Dashboard() {
                         borderRadius: "10px",
                       }}
                     >
-                      3x Parallel
+                      4x Parallel
                     </span>
                   </button>
                 </div>
@@ -1938,912 +1937,912 @@ export default function Dashboard() {
                 }}
               >
                 {scraperTab === "single" ? (
-                <>
-                  {/* 1. Target Country Dropdown */}
-                  <div className="modal-form-group" style={{ marginBottom: "16px" }}>
-                    <label className="modal-label">Target Country / Market</label>
-                    <div className="input-with-icon-wrapper">
-                      <Globe size={15} className="input-icon-left" />
-                      <select
-                        value={scrapeCountryCode}
-                        onChange={(e) => {
-                          const code = e.target.value;
-                          const found = ALL_COUNTRIES.find((c) => c.code === code);
-                          setScrapeCountryCode(code);
-                          setScrapeCountry(found ? found.name : "World");
-                        }}
-                        className="modal-select"
-                      >
-                        {ALL_COUNTRIES.map((c) => (
-                          <option key={c.code} value={c.code}>
-                            {c.flag} {c.name} {c.code === "000" ? "(All Global Markets - 000)" : `(ISO ${c.code})`}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    {/* Quick Country Pills */}
-                    <div className="quick-pill-container">
-                      {[
-                        { label: "🌍 World", val: "World", code: "000" },
-                        { label: "🇮🇳 India", val: "India", code: "699" },
-                        { label: "🇩🇪 Germany", val: "Germany", code: "276" },
-                        { label: "🇻🇳 Vietnam", val: "Vietnam", code: "704" },
-                        { label: "🇺🇸 USA", val: "United States", code: "842" },
-                        { label: "🇦🇪 UAE", val: "United Arab Emirates", code: "784" },
-                        { label: "🇨🇳 China", val: "China", code: "156" },
-                      ].map((c) => (
-                        <button
-                          key={c.val}
-                          type="button"
-                          onClick={() => {
-                            setScrapeCountry(c.val);
-                            setScrapeCountryCode(c.code);
+                  <>
+                    {/* 1. Target Country Dropdown */}
+                    <div className="modal-form-group" style={{ marginBottom: "16px" }}>
+                      <label className="modal-label">Target Country / Market</label>
+                      <div className="input-with-icon-wrapper">
+                        <Globe size={15} className="input-icon-left" />
+                        <select
+                          value={scrapeCountryCode}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            const found = ALL_COUNTRIES.find((c) => c.code === code);
+                            setScrapeCountryCode(code);
+                            setScrapeCountry(found ? found.name : "World");
                           }}
-                          className={`quick-pill ${scrapeCountry.toLowerCase() === c.val.toLowerCase() ? "active" : ""}`}
+                          className="modal-select"
                         >
-                          {c.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 2. Custom HS Code Input & Commodities */}
-                  <div className="modal-form-group" style={{ marginBottom: "16px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                      <label className="modal-label" style={{ margin: 0 }}>HS Code & Commodity Sector</label>
-                      <span style={{ fontSize: "11px", color: "#2563eb", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
-                        <CheckCircle2 size={12} style={{ color: "#16a34a" }} /> Zero-Blank Guarantees
-                      </span>
-                    </div>
-
-                    <div style={{ marginBottom: "8px" }}>
-                      <input
-                        type="text"
-                        placeholder="Type ANY 4 or 6 digit HS Code (e.g. 310210, 5208, 0902)..."
-                        value={customHsInput}
-                        onChange={(e) => {
-                          setCustomHsInput(e.target.value);
-                          setScrapeHsCode(e.target.value);
-                        }}
-                        className="modal-select"
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: "13px",
-                          fontWeight: 700,
-                          color: "#0f172a",
-                          background: "#f8fafc",
-                          borderColor: "#93c5fd",
-                        }}
-                      />
-                    </div>
-
-                    {/* Quick Commodity Pills */}
-                    <div className="quick-pill-container" style={{ marginTop: "6px" }}>
-                      {[
-                        { label: "🌱 Urea (310210)", hs: "310210" },
-                        { label: "🧵 Cotton (5208)", hs: "5208" },
-                        { label: "🫖 Tea (0902)", hs: "0902" },
-                        { label: "🌶️ Spices (0910)", hs: "0910" },
-                        { label: "🌾 Rice (1006)", hs: "1006" },
-                        { label: "☕ Coffee (0901)", hs: "0901" },
-                        { label: "💊 Pharma (3004)", hs: "3004" },
-                        { label: "🏗️ Steel (7208)", hs: "7208" },
-                      ].map((g) => {
-                        const isAct = customHsInput.trim() === g.hs;
-                        return (
+                          {ALL_COUNTRIES.map((c) => (
+                            <option key={c.code} value={c.code}>
+                              {c.flag} {c.name} {c.code === "000" ? "(All Global Markets - 000)" : `(ISO ${c.code})`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {/* Quick Country Pills */}
+                      <div className="quick-pill-container">
+                        {[
+                          { label: "🌍 World", val: "World", code: "000" },
+                          { label: "🇮🇳 India", val: "India", code: "699" },
+                          { label: "🇩🇪 Germany", val: "Germany", code: "276" },
+                          { label: "🇻🇳 Vietnam", val: "Vietnam", code: "704" },
+                          { label: "🇺🇸 USA", val: "United States", code: "842" },
+                          { label: "🇦🇪 UAE", val: "United Arab Emirates", code: "784" },
+                          { label: "🇨🇳 China", val: "China", code: "156" },
+                        ].map((c) => (
                           <button
-                            key={g.hs}
+                            key={c.val}
                             type="button"
                             onClick={() => {
-                              setCustomHsInput(g.hs);
-                              setScrapeHsCode(g.hs);
+                              setScrapeCountry(c.val);
+                              setScrapeCountryCode(c.code);
                             }}
-                            className={`quick-pill ${isAct ? "active" : ""}`}
+                            className={`quick-pill ${scrapeCountry.toLowerCase() === c.val.toLowerCase() ? "active" : ""}`}
                           >
-                            {g.label}
+                            {c.label}
                           </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 3. Trade Flow Dropdown */}
-                  <div className="modal-form-group" style={{ marginBottom: "16px" }}>
-                    <label className="modal-label">Trade Flow</label>
-                    <select
-                      value={scrapeTradeFlow}
-                      onChange={(e) => setScrapeTradeFlow(e.target.value as "exports" | "imports")}
-                      className="modal-select"
-                      style={{ fontWeight: 600 }}
-                    >
-                      <option value="imports">↙ Importers / Buyers (Code I)</option>
-                      <option value="exports">↗ Exporters / Suppliers (Code E)</option>
-                    </select>
-                  </div>
-
-                  {/* 3b. TradeMap Session Status & One-Click Browser Verification */}
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "10px",
-                      padding: "10px 14px",
-                      background: "#f8fafc",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: "10px",
-                      marginBottom: "14px",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <Globe size={15} style={{ color: "#2563eb" }} />
-                      <div style={{ fontSize: "12px", color: "#1e293b", fontWeight: 500 }}>
-                        <strong>TradeMap Profile:</strong> Persistent Session
+                        ))}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleOpenBrowserLogin}
-                      disabled={isOpeningBrowser}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "5px",
-                        fontSize: "11px",
-                        fontWeight: 600,
-                        padding: "5px 12px",
-                        background: "#eff6ff",
-                        color: "#1d4ed8",
-                        border: "1px solid #bfdbfe",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                      }}
-                      title="Opens TradeMap in Chrome to verify login or sign in"
-                    >
-                      <ExternalLink size={12} />
-                      {isOpeningBrowser ? "Opening Chrome..." : "Verify / Open Login"}
-                    </button>
-                  </div>
 
-                  {/* 4. MongoDB Atlas Database Banner */}
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "10px",
-                      padding: "10px 14px",
-                      background: "#f0fdf4",
-                      border: "1px solid #bbf7d0",
-                      borderRadius: "10px",
-                      marginBottom: "16px",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <ShieldCheck size={16} style={{ color: "#16a34a" }} />
-                      <span style={{ fontSize: "12px", color: "#166534", fontWeight: 600 }}>
-                        Target Database: MongoDB Atlas Cloud (tradescan)
-                      </span>
+                    {/* 2. Custom HS Code Input & Commodities */}
+                    <div className="modal-form-group" style={{ marginBottom: "16px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                        <label className="modal-label" style={{ margin: 0 }}>HS Code & Commodity Sector</label>
+                        <span style={{ fontSize: "11px", color: "#2563eb", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
+                          <CheckCircle2 size={12} style={{ color: "#16a34a" }} /> Zero-Blank Guarantees
+                        </span>
+                      </div>
+
+                      <div style={{ marginBottom: "8px" }}>
+                        <input
+                          type="text"
+                          placeholder="Type ANY 4 or 6 digit HS Code (e.g. 310210, 5208, 0902)..."
+                          value={customHsInput}
+                          onChange={(e) => {
+                            setCustomHsInput(e.target.value);
+                            setScrapeHsCode(e.target.value);
+                          }}
+                          className="modal-select"
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: "13px",
+                            fontWeight: 700,
+                            color: "#0f172a",
+                            background: "#f8fafc",
+                            borderColor: "#93c5fd",
+                          }}
+                        />
+                      </div>
+
+                      {/* Quick Commodity Pills */}
+                      <div className="quick-pill-container" style={{ marginTop: "6px" }}>
+                        {[
+                          { label: "🌱 Urea (310210)", hs: "310210" },
+                          { label: "🧵 Cotton (5208)", hs: "5208" },
+                          { label: "🫖 Tea (0902)", hs: "0902" },
+                          { label: "🌶️ Spices (0910)", hs: "0910" },
+                          { label: "🌾 Rice (1006)", hs: "1006" },
+                          { label: "☕ Coffee (0901)", hs: "0901" },
+                          { label: "💊 Pharma (3004)", hs: "3004" },
+                          { label: "🏗️ Steel (7208)", hs: "7208" },
+                        ].map((g) => {
+                          const isAct = customHsInput.trim() === g.hs;
+                          return (
+                            <button
+                              key={g.hs}
+                              type="button"
+                              onClick={() => {
+                                setCustomHsInput(g.hs);
+                                setScrapeHsCode(g.hs);
+                              }}
+                              className={`quick-pill ${isAct ? "active" : ""}`}
+                            >
+                              {g.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <span style={{ fontSize: "11px", background: "#dcfce7", color: "#15803d", padding: "2px 8px", borderRadius: "12px", fontWeight: 700 }}>
-                      Active 🟢
-                    </span>
-                  </div>
 
-                  {/* 5. Live Logs Console */}
-                  {scrapeLogs && (
+                    {/* 3. Trade Flow Dropdown */}
+                    <div className="modal-form-group" style={{ marginBottom: "16px" }}>
+                      <label className="modal-label">Trade Flow</label>
+                      <select
+                        value={scrapeTradeFlow}
+                        onChange={(e) => setScrapeTradeFlow(e.target.value as "exports" | "imports")}
+                        className="modal-select"
+                        style={{ fontWeight: 600 }}
+                      >
+                        <option value="imports">↙ Importers / Buyers (Code I)</option>
+                        <option value="exports">↗ Exporters / Suppliers (Code E)</option>
+                      </select>
+                    </div>
+
+                    {/* 3b. TradeMap Session Status & One-Click Browser Verification */}
                     <div
                       style={{
-                        background: "#020617",
-                        color: "#38bdf8",
-                        borderRadius: "10px",
-                        padding: "14px",
-                        fontSize: "11.5px",
-                        fontFamily: "var(--font-mono)",
-                        maxHeight: "150px",
-                        overflowY: "auto",
-                        marginBottom: "16px",
-                        whiteSpace: "pre-wrap",
-                        border: "1px solid #1e293b",
-                        boxShadow: "inset 0 2px 4px rgba(0,0,0,0.5)",
-                        lineHeight: "1.5",
-                      }}
-                    >
-                      {scrapeLogs}
-                    </div>
-                  )}
-
-                  {/* Direct Excel Download for this Specific Scrape */}
-                  {scrapeLogs && (scrapeLogs.includes("JOB COMPLETE") || scrapeLogs.includes("Done]")) && (
-                    <div
-                      style={{
-                        marginBottom: "16px",
-                        padding: "14px 16px",
-                        background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)",
-                        borderRadius: "12px",
-                        border: "1.5px solid #22c55e",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
                         gap: "10px",
-                        flexWrap: "wrap",
+                        padding: "10px 14px",
+                        background: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "10px",
+                        marginBottom: "14px",
                       }}
                     >
-                      <div>
-                        <div style={{ fontWeight: 700, color: "#15803d", fontSize: "14px", display: "flex", alignItems: "center", gap: "6px" }}>
-                          <span>📊</span>
-                          <span>Separate Excel Ready (No Mixing)!</span>
-                        </div>
-                        <div style={{ fontSize: "12px", color: "#166534", marginTop: "2px" }}>
-                          Download only this commodity (HS {customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode}) without mixing with other databases.
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <Globe size={15} style={{ color: "#2563eb" }} />
+                        <div style={{ fontSize: "12px", color: "#1e293b", fontWeight: 500 }}>
+                          <strong>TradeMap Profile:</strong> Persistent Session
                         </div>
                       </div>
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <button
-                          onClick={() => {
-                            const finalHs = customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode || "310210";
-                            handleExport("xlsx", finalHs, scrapeCountry);
-                          }}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            background: "#16a34a",
-                            color: "#ffffff",
-                            fontWeight: 700,
-                            fontSize: "13px",
-                            padding: "8px 16px",
-                            borderRadius: "8px",
-                            border: "none",
-                            cursor: "pointer",
-                            boxShadow: "0 2px 8px rgba(22, 163, 74, 0.3)",
-                          }}
-                        >
-                          <FileSpreadsheet size={15} />
-                          Download HS {customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode} Excel
-                        </button>
-                        <button
-                          onClick={() => {
-                            const finalHs = customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode || "310210";
-                            handleExport("csv", finalHs, scrapeCountry);
-                          }}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            background: "#ffffff",
-                            color: "#15803d",
-                            fontWeight: 700,
-                            fontSize: "13px",
-                            padding: "8px 12px",
-                            borderRadius: "8px",
-                            border: "1px solid #86efac",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <Download size={14} />
-                          CSV
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={handleOpenBrowserLogin}
+                        disabled={isOpeningBrowser}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          padding: "5px 12px",
+                          background: "#eff6ff",
+                          color: "#1d4ed8",
+                          border: "1px solid #bfdbfe",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                        title="Opens TradeMap in Chrome to verify login or sign in"
+                      >
+                        <ExternalLink size={12} />
+                        {isOpeningBrowser ? "Opening Chrome..." : "Verify / Open Login"}
+                      </button>
                     </div>
-                  )}
-                </>
-              ) : batchStatus?.isRunning ? (
-                /* ========================================================== */
-                /* 🟢 LIVE PARALLEL EXTRACTION ENGINE RUNNER HUD             */
-                /* ========================================================== */
-                    <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                      {/* 1. Live Active Banner & Beacon */}
+
+                    {/* 4. MongoDB Atlas Database Banner */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "10px",
+                        padding: "10px 14px",
+                        background: "#f0fdf4",
+                        border: "1px solid #bbf7d0",
+                        borderRadius: "10px",
+                        marginBottom: "16px",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <ShieldCheck size={16} style={{ color: "#16a34a" }} />
+                        <span style={{ fontSize: "12px", color: "#166534", fontWeight: 600 }}>
+                          Target Database: MongoDB Atlas Cloud (tradescan)
+                        </span>
+                      </div>
+                      <span style={{ fontSize: "11px", background: "#dcfce7", color: "#15803d", padding: "2px 8px", borderRadius: "12px", fontWeight: 700 }}>
+                        Active 🟢
+                      </span>
+                    </div>
+
+                    {/* 5. Live Logs Console */}
+                    {scrapeLogs && (
                       <div
                         style={{
-                          background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-                          borderRadius: "14px",
-                          padding: "12px 16px",
-                          color: "#ffffff",
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          border: "1px solid #334155",
-                          boxShadow: "0 4px 20px rgba(15, 23, 42, 0.15)",
+                          background: "#020617",
+                          color: "#38bdf8",
+                          borderRadius: "10px",
+                          padding: "14px",
+                          fontSize: "11.5px",
+                          fontFamily: "var(--font-mono)",
+                          maxHeight: "150px",
+                          overflowY: "auto",
+                          marginBottom: "16px",
+                          whiteSpace: "pre-wrap",
+                          border: "1px solid #1e293b",
+                          boxShadow: "inset 0 2px 4px rgba(0,0,0,0.5)",
+                          lineHeight: "1.5",
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                          <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {scrapeLogs}
+                      </div>
+                    )}
+
+                    {/* Direct Excel Download for this Specific Scrape */}
+                    {scrapeLogs && (scrapeLogs.includes("JOB COMPLETE") || scrapeLogs.includes("Done]")) && (
+                      <div
+                        style={{
+                          marginBottom: "16px",
+                          padding: "14px 16px",
+                          background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)",
+                          borderRadius: "12px",
+                          border: "1.5px solid #22c55e",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "10px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700, color: "#15803d", fontSize: "14px", display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span>📊</span>
+                            <span>Separate Excel Ready (No Mixing)!</span>
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#166534", marginTop: "2px" }}>
+                            Download only this commodity (HS {customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode}) without mixing with other databases.
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <button
+                            onClick={() => {
+                              const finalHs = customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode || "310210";
+                              handleExport("xlsx", finalHs, scrapeCountry);
+                            }}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              background: "#16a34a",
+                              color: "#ffffff",
+                              fontWeight: 700,
+                              fontSize: "13px",
+                              padding: "8px 16px",
+                              borderRadius: "8px",
+                              border: "none",
+                              cursor: "pointer",
+                              boxShadow: "0 2px 8px rgba(22, 163, 74, 0.3)",
+                            }}
+                          >
+                            <FileSpreadsheet size={15} />
+                            Download HS {customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode} Excel
+                          </button>
+                          <button
+                            onClick={() => {
+                              const finalHs = customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode || "310210";
+                              handleExport("csv", finalHs, scrapeCountry);
+                            }}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              background: "#ffffff",
+                              color: "#15803d",
+                              fontWeight: 700,
+                              fontSize: "13px",
+                              padding: "8px 12px",
+                              borderRadius: "8px",
+                              border: "1px solid #86efac",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <Download size={14} />
+                            CSV
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : batchStatus?.isRunning ? (
+                  /* ========================================================== */
+                  /* 🟢 LIVE PARALLEL EXTRACTION ENGINE RUNNER HUD             */
+                  /* ========================================================== */
+                  <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    {/* 1. Live Active Banner & Beacon */}
+                    <div
+                      style={{
+                        background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+                        borderRadius: "14px",
+                        padding: "12px 16px",
+                        color: "#ffffff",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        border: "1px solid #334155",
+                        boxShadow: "0 4px 20px rgba(15, 23, 42, 0.15)",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <span
+                            style={{
+                              width: "12px",
+                              height: "12px",
+                              borderRadius: "50%",
+                              background: "#22c55e",
+                              boxShadow: "0 0 10px #22c55e",
+                              display: "inline-block",
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <span style={{ fontSize: "13.5px", fontWeight: 800, letterSpacing: "0.3px" }}>
+                              LIVE {batchStatus.workerCount || 4}x PARALLEL PIPELINE ACTIVE
+                            </span>
                             <span
                               style={{
-                                width: "12px",
-                                height: "12px",
-                                borderRadius: "50%",
+                                fontSize: "10px",
+                                fontWeight: 700,
                                 background: "#22c55e",
-                                boxShadow: "0 0 10px #22c55e",
-                                display: "inline-block",
+                                color: "#052e16",
+                                padding: "1px 6px",
+                                borderRadius: "10px",
                               }}
-                            />
-                          </div>
-                          <div>
-                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                              <span style={{ fontSize: "13.5px", fontWeight: 800, letterSpacing: "0.3px" }}>
-                                LIVE {batchStatus.workerCount || 4}x PARALLEL PIPELINE ACTIVE
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: "10px",
-                                  fontWeight: 700,
-                                  background: "#22c55e",
-                                  color: "#052e16",
-                                  padding: "1px 6px",
-                                  borderRadius: "10px",
-                                }}
-                              >
-                                STREAMING
-                              </span>
-                            </div>
-                            <span style={{ fontSize: "11.5px", color: "#94a3b8" }}>
-                              Tasks: {batchStatus.completedTasks || 0}/{batchStatus.totalTasks || 0} ({batchStatus.progressPercent || 0}%) • MongoDB Atlas Connected
+                            >
+                              STREAMING
                             </span>
                           </div>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: "10.5px", color: "#94a3b8" }}>Elapsed Time</div>
-                          <div style={{ fontSize: "13.5px", fontWeight: 700, fontFamily: "var(--font-mono)", color: "#38bdf8" }}>
-                            {Math.floor((batchStatus.elapsedSeconds || 0) / 60)}m {(batchStatus.elapsedSeconds || 0) % 60}s
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 2. Key Metrics Grid (4 Cards: Progress, ETA, Extracted, Workers) */}
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px" }}>
-                        {/* Progress Card */}
-                        <div
-                          style={{
-                            background: "#ffffff",
-                            border: "1px solid #e2e8f0",
-                            borderRadius: "10px",
-                            padding: "10px 12px",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "4px",
-                          }}
-                        >
-                          <span style={{ fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>
-                            Overall Progress
-                          </span>
-                          <div style={{ fontSize: "18px", fontWeight: 800, color: "#1d4ed8" }}>
-                            {batchStatus.progressPercent || 0}%
-                          </div>
-                          <div style={{ width: "100%", height: "5px", background: "#e2e8f0", borderRadius: "10px", overflow: "hidden" }}>
-                            <div
-                              style={{
-                                width: `${Math.max(batchStatus.progressPercent || 0, 5)}%`,
-                                height: "100%",
-                                background: "linear-gradient(90deg, #2563eb, #38bdf8)",
-                                transition: "width 0.4s ease",
-                              }}
-                            />
-                          </div>
-                          <span style={{ fontSize: "10px", color: "#64748b" }}>
-                            {batchStatus.completedTasks || 0} of {batchStatus.totalTasks || 0} pages
-                          </span>
-                        </div>
-
-                        {/* ETA Card - "Kitni der me hoga" */}
-                        <div
-                          style={{
-                            background: "#f0fdf4",
-                            border: "1px solid #bbf7d0",
-                            borderRadius: "10px",
-                            padding: "10px 12px",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "4px",
-                          }}
-                        >
-                          <span style={{ fontSize: "10px", fontWeight: 700, color: "#166534", textTransform: "uppercase" }}>
-                            Est. Time (ETA)
-                          </span>
-                          <div style={{ fontSize: "16.5px", fontWeight: 800, color: "#15803d" }}>
-                            {batchStatus.etaSeconds
-                              ? `~${Math.floor(batchStatus.etaSeconds / 60)}m ${batchStatus.etaSeconds % 60}s`
-                              : batchStatus.completedTasks === 0
-                              ? "Estimating..."
-                              : "< 30s"}
-                          </div>
-                          <span style={{ fontSize: "10px", color: "#166534" }}>
-                            Speed: {batchStatus.speedRecordsPerMin || "~320"}/min
-                          </span>
-                        </div>
-
-                        {/* Profiles Saved - "Kahan tak pahucha" */}
-                        <div
-                          style={{
-                            background: "#eff6ff",
-                            border: "1px solid #bfdbfe",
-                            borderRadius: "10px",
-                            padding: "10px 12px",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "4px",
-                          }}
-                        >
-                          <span style={{ fontSize: "10px", fontWeight: 700, color: "#1e40af", textTransform: "uppercase" }}>
-                            Profiles Saved
-                          </span>
-                          <div style={{ fontSize: "18px", fontWeight: 800, color: "#1d4ed8" }}>
-                            {(batchStatus.totalExtracted || 0).toLocaleString()}
-                          </div>
-                          <span style={{ fontSize: "10px", color: "#1e40af" }}>
-                            Live in Mongo Atlas
-                          </span>
-                        </div>
-
-                        {/* Active Pipeline */}
-                        <div
-                          style={{
-                            background: "#faf5ff",
-                            border: "1px solid #e9d5ff",
-                            borderRadius: "10px",
-                            padding: "10px 12px",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "4px",
-                          }}
-                        >
-                          <span style={{ fontSize: "10px", fontWeight: 700, color: "#6b21a8", textTransform: "uppercase" }}>
-                            Pipeline
-                          </span>
-                          <div style={{ fontSize: "18px", fontWeight: 800, color: "#7e22ce" }}>
-                            {batchStatus.workerCount || 4}x Parallel
-                          </div>
-                          <span style={{ fontSize: "10px", color: "#6b21a8" }}>
-                            STS Direct OAuth2
+                          <span style={{ fontSize: "11.5px", color: "#94a3b8" }}>
+                            Tasks: {batchStatus.completedTasks || 0}/{batchStatus.totalTasks || 0} ({batchStatus.progressPercent || 0}%) • MongoDB Atlas Connected
                           </span>
                         </div>
                       </div>
-
-                      {/* 3. 4 Parallel Worker Telemetry Cards Grid */}
-                      <div>
-                        <div style={{ fontSize: "12px", fontWeight: 700, color: "#1e293b", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
-                          <RefreshCw size={13} className="spin" style={{ color: "#2563eb" }} />
-                          <span>Live Telemetry per Worker Account:</span>
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                          {(batchStatus.active && batchStatus.active.length > 0
-                            ? batchStatus.active
-                            : [1, 2, 3, 4].map((id: number) => ({
-                                workerId: id,
-                                email: `Worker #${id}`,
-                                displayAccount: `Account #${id}`,
-                                status: "IDLE",
-                                currentCompany: "Connecting...",
-                              }))
-                          ).map((w: any) => {
-                            const isFetching = w.status === "FETCHING";
-                            const isEnriching = w.status === "ENRICHING";
-                            const isDone = w.status === "TASK_DONE";
-                            const badgeColor = isFetching
-                              ? { bg: "#fef3c7", text: "#b45309", border: "#fde68a", label: `⚡ Page ${w.page || 1}/${w.totalPages || 1}` }
-                              : isEnriching
-                              ? { bg: "#dbeafe", text: "#1d4ed8", border: "#bfdbfe", label: `🔍 Enriching (${w.currentRecord || 0}/${w.totalOnPage || 100})` }
-                              : isDone
-                              ? { bg: "#dcfce7", text: "#15803d", border: "#bbf7d0", label: "✅ Page Saved" }
-                              : { bg: "#f1f5f9", text: "#475569", border: "#e2e8f0", label: "⏳ Idle / Waiting" };
-
-                            return (
-                              <div
-                                key={w.workerId}
-                                style={{
-                                  background: "#ffffff",
-                                  border: "1px solid #cbd5e1",
-                                  borderRadius: "10px",
-                                  padding: "9px 12px",
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  gap: "5px",
-                                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-                                }}
-                              >
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                    <span style={{ fontWeight: 800, fontSize: "12px", color: "#0f172a" }}>
-                                      Worker #{w.workerId}
-                                    </span>
-                                    <span style={{ fontSize: "10.5px", color: "#64748b" }}>
-                                      ({w.displayAccount || w.email?.split("@")[0] || `Acc ${w.workerId}`})
-                                    </span>
-                                  </div>
-                                  <span
-                                    style={{
-                                      fontSize: "10px",
-                                      fontWeight: 700,
-                                      padding: "2px 7px",
-                                      borderRadius: "8px",
-                                      background: badgeColor.bg,
-                                      color: badgeColor.text,
-                                      border: `1px solid ${badgeColor.border}`,
-                                    }}
-                                  >
-                                    {badgeColor.label}
-                                  </span>
-                                </div>
-
-                                <div style={{ fontSize: "11px", color: "#1e293b", fontWeight: 600 }}>
-                                  {w.hsCode ? (
-                                    <>
-                                      <span style={{ background: "#f1f5f9", padding: "1px 6px", borderRadius: "6px" }}>
-                                        HS {w.hsCode}
-                                      </span>{" "}
-                                      • {w.countryName || "India"} ({w.tradeFlow || "exports"})
-                                    </>
-                                  ) : (
-                                    <span style={{ color: "#94a3b8" }}>Standby / Ready</span>
-                                  )}
-                                </div>
-
-                                <div
-                                  style={{
-                                    fontSize: "11px",
-                                    color: "#475569",
-                                    background: "#f8fafc",
-                                    padding: "4px 8px",
-                                    borderRadius: "6px",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap",
-                                  }}
-                                  title={w.currentCompany}
-                                >
-                                  🏢 {w.currentCompany || "Processing task..."}
-                                </div>
-
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10px", color: "#64748b" }}>
-                                  <span>Task: <strong>{w.extractedThisTask || 0}</strong></span>
-                                  <span>Total Saved: <strong>{w.totalExtracted || 0}</strong></span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* 4. Live Activity Stream / Console ("Kya hua") */}
-                      <div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                          <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
-                            <Terminal size={13} style={{ color: "#2563eb" }} />
-                            <span>Real-time Live Activity Console ("Kya Hua"):</span>
-                          </div>
-                          <span style={{ fontSize: "10.5px", color: "#64748b" }}>
-                            Live Event Stream ({batchStatus.logs?.length || 0} events)
-                          </span>
-                        </div>
-                        <div
-                          ref={logContainerRef}
-                          style={{
-                            background: "#090d16",
-                            borderRadius: "10px",
-                            border: "1px solid #1e293b",
-                            padding: "10px 12px",
-                            height: "135px",
-                            overflowY: "auto",
-                            fontFamily: "var(--font-mono)",
-                            fontSize: "11px",
-                            lineHeight: "1.6",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "2px",
-                          }}
-                        >
-                          {batchStatus.logs && batchStatus.logs.length > 0 ? (
-                            batchStatus.logs.map((log: string, idx: number) => {
-                              const isDone = log.includes("COMPLETED") || log.includes("Saved") || log.includes("FINISHED");
-                              const isError = log.includes("Error") || log.includes("FAILED") || log.includes("❌");
-                              const color = isDone ? "#4ade80" : isError ? "#f87171" : "#93c5fd";
-                              return (
-                                <div key={idx} style={{ color }}>
-                                  {log}
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <div style={{ color: "#64748b" }}>Initializing distributed queue and authenticated sessions...</div>
-                          )}
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: "10.5px", color: "#94a3b8" }}>Elapsed Time</div>
+                        <div style={{ fontSize: "13.5px", fontWeight: 700, fontFamily: "var(--font-mono)", color: "#38bdf8" }}>
+                          {Math.floor((batchStatus.elapsedSeconds || 0) / 60)}m {(batchStatus.elapsedSeconds || 0) % 60}s
                         </div>
                       </div>
                     </div>
-                  ) : (
-                    /* ========================================================== */
-                    /* BATCH CONFIGURATION FORM (IDLE / READY TO RUN)             */
-                    /* ========================================================== */
-                    <>
-                      {/* Completed HS Codes & Downloads from previous batch */}
-                      {batchStatus?.completed && batchStatus.completed.length > 0 && (
-                        <div
-                          style={{
-                            background: "#f0fdf4",
-                            border: "1px solid #86efac",
-                            borderRadius: "12px",
-                            padding: "10px 14px",
-                            marginBottom: "14px",
-                          }}
-                        >
-                          <div style={{ fontSize: "12px", fontWeight: 700, color: "#15803d", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-                            <CheckCircle size={14} style={{ color: "#16a34a" }} />
-                            <span>Recently Completed Extractions ({batchStatus.completed.length} HS Codes Ready):</span>
-                          </div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                            {batchStatus.completed.map((c: any) => (
-                              <button
-                                key={c.hsCode}
-                                type="button"
-                                onClick={() => handleExport("xlsx", c.hsCode, c.countryName || scrapeCountry)}
-                                style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  padding: "5px 10px",
-                                  background: "#ffffff",
-                                  border: "1px solid #86efac",
-                                  borderRadius: "7px",
-                                  fontSize: "11.5px",
-                                  fontWeight: 600,
-                                  color: "#166534",
-                                  cursor: "pointer",
-                                }}
-                                title={`Download dedicated Excel for HS ${c.hsCode}`}
-                              >
-                                <FileSpreadsheet size={13} style={{ color: "#16a34a" }} />
-                                <span>Download HS {c.hsCode} ({c.count} records)</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
 
-                      {/* Account Login Setup Section - 4 Accounts */}
+                    {/* 2. Key Metrics Grid (4 Cards: Progress, ETA, Extracted, Workers) */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px" }}>
+                      {/* Progress Card */}
                       <div
                         style={{
-                          background: "#f8fafc",
+                          background: "#ffffff",
                           border: "1px solid #e2e8f0",
-                          borderRadius: "12px",
-                          padding: "12px 14px",
-                          marginBottom: "14px",
+                          borderRadius: "10px",
+                          padding: "10px 12px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "4px",
                         }}
                       >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                          <div style={{ fontSize: "12px", fontWeight: 700, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
-                            <span>🔐</span>
-                            <span>TradeMap 4-Account Cloud Cluster (All 4 Configured)</span>
-                          </div>
-                          <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: 700 }}>4 Accounts Ready</span>
+                        <span style={{ fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>
+                          Overall Progress
+                        </span>
+                        <div style={{ fontSize: "18px", fontWeight: 800, color: "#1d4ed8" }}>
+                          {batchStatus.progressPercent || 0}%
                         </div>
-
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
-                          {[
-                            { id: 1, name: "kingamaan14" },
-                            { id: 2, name: "modipriyanshi" },
-                            { id: 3, name: "thakkar3108" },
-                            { id: 4, name: "deepthacker" },
-                          ].map((acc) => (
-                            <button
-                              key={acc.id}
-                              type="button"
-                              onClick={() => handleSetupWorkerAccount(acc.id)}
-                              disabled={openingWorkerId === acc.id}
-                              style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                padding: "6px 8px",
-                                borderRadius: "8px",
-                                fontSize: "11px",
-                                fontWeight: 600,
-                                border: "1px solid #cbd5e1",
-                                background: "#ffffff",
-                                color: "#334155",
-                                cursor: "pointer",
-                                transition: "all 0.15s ease",
-                              }}
-                              title={`Opens Chrome profile for Account #${acc.id} (${acc.name})`}
-                            >
-                              <span style={{ fontWeight: 700, color: "#1d4ed8" }}>Acc #{acc.id}</span>
-                              <span style={{ fontSize: "9.5px", color: "#64748b" }}>{acc.name}</span>
-                            </button>
-                          ))}
+                        <div style={{ width: "100%", height: "5px", background: "#e2e8f0", borderRadius: "10px", overflow: "hidden" }}>
+                          <div
+                            style={{
+                              width: `${Math.max(batchStatus.progressPercent || 0, 5)}%`,
+                              height: "100%",
+                              background: "linear-gradient(90deg, #2563eb, #38bdf8)",
+                              transition: "width 0.4s ease",
+                            }}
+                          />
                         </div>
+                        <span style={{ fontSize: "10px", color: "#64748b" }}>
+                          {batchStatus.completedTasks || 0} of {batchStatus.totalTasks || 0} pages
+                        </span>
                       </div>
 
-                      {/* Worker Concurrency Selector - 1x to 4x */}
-                      <div className="modal-form-group" style={{ marginBottom: "14px" }}>
-                        <label className="modal-label">Parallel Worker Speed & Accounts</label>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
-                          {[
-                            { count: 1, label: "1 Account", tag: "Sequential" },
-                            { count: 2, label: "2 Accounts ⚡", tag: "2x Parallel" },
-                            { count: 3, label: "3 Accounts 🚀", tag: "3x Super Fast" },
-                            { count: 4, label: "4 Accounts 👑", tag: "4x Max Speed" },
-                          ].map((w) => (
-                            <button
-                              key={w.count}
-                              type="button"
-                              onClick={() => setBatchWorkerCount(w.count)}
-                              style={{
-                                padding: "8px 6px",
-                                borderRadius: "8px",
-                                border: batchWorkerCount === w.count ? "1.5px solid #2563eb" : "1px solid #e2e8f0",
-                                background: batchWorkerCount === w.count ? "#eff6ff" : "#ffffff",
-                                color: batchWorkerCount === w.count ? "#1d4ed8" : "#475569",
-                                fontWeight: 600,
-                                fontSize: "11.5px",
-                                cursor: "pointer",
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "center",
-                                gap: "2px",
-                              }}
-                            >
-                              <span>{w.label}</span>
-                              <span style={{ fontSize: "9.5px", color: batchWorkerCount === w.count ? "#2563eb" : "#94a3b8" }}>
-                                {w.tag}
-                              </span>
-                            </button>
-                          ))}
+                      {/* ETA Card - "Kitni der me hoga" */}
+                      <div
+                        style={{
+                          background: "#f0fdf4",
+                          border: "1px solid #bbf7d0",
+                          borderRadius: "10px",
+                          padding: "10px 12px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "4px",
+                        }}
+                      >
+                        <span style={{ fontSize: "10px", fontWeight: 700, color: "#166534", textTransform: "uppercase" }}>
+                          Est. Time (ETA)
+                        </span>
+                        <div style={{ fontSize: "16.5px", fontWeight: 800, color: "#15803d" }}>
+                          {batchStatus.etaSeconds
+                            ? `~${Math.floor(batchStatus.etaSeconds / 60)}m ${batchStatus.etaSeconds % 60}s`
+                            : batchStatus.completedTasks === 0
+                              ? "Estimating..."
+                              : "< 30s"}
                         </div>
+                        <span style={{ fontSize: "10px", color: "#166534" }}>
+                          Speed: {batchStatus.speedRecordsPerMin || "~320"}/min
+                        </span>
                       </div>
 
-                      {/* HS Codes List Textarea with Live Task Preview */}
-                      <div className="modal-form-group" style={{ marginBottom: "14px" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                          <label className="modal-label" style={{ margin: 0 }}>
-                            List of Tasks (HS Code, Country, Trade Flow)
-                          </label>
-                          <span style={{ fontSize: "11px", color: "#2563eb", fontWeight: 600 }}>
-                            {batchHsInput.split(/\r?\n/).filter((s) => s.trim()).length} Tasks Queued
-                          </span>
+                      {/* Profiles Saved - "Kahan tak pahucha" */}
+                      <div
+                        style={{
+                          background: "#eff6ff",
+                          border: "1px solid #bfdbfe",
+                          borderRadius: "10px",
+                          padding: "10px 12px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "4px",
+                        }}
+                      >
+                        <span style={{ fontSize: "10px", fontWeight: 700, color: "#1e40af", textTransform: "uppercase" }}>
+                          Profiles Saved
+                        </span>
+                        <div style={{ fontSize: "18px", fontWeight: 800, color: "#1d4ed8" }}>
+                          {(batchStatus.totalExtracted || 0).toLocaleString()}
                         </div>
-                        <textarea
-                          rows={4}
-                          value={batchHsInput}
-                          onChange={(e) => setBatchHsInput(e.target.value)}
-                          placeholder={"Type or paste line-by-line, for example:\n0101, India, Exporters\n1006, World, Importers\n5208, Germany, Exporters\n3004 (uses fallback below)"}
-                          style={{
-                            width: "100%",
-                            padding: "10px 12px",
-                            borderRadius: "10px",
-                            border: "1px solid #cbd5e1",
-                            fontSize: "12.5px",
-                            fontFamily: "var(--font-mono)",
-                            color: "#0f172a",
-                            background: "#ffffff",
-                            outline: "none",
-                            resize: "vertical",
-                            lineHeight: "1.6",
-                          }}
-                        />
+                        <span style={{ fontSize: "10px", color: "#1e40af" }}>
+                          Live in Mongo Atlas
+                        </span>
+                      </div>
 
-                        {/* Live Parsed Preview Badges */}
-                        {(() => {
-                          const previews = batchHsInput
-                            .split(/\r?\n/)
-                            .map((line) => {
-                              const parts = line.split(/[,|\t]+/).map((s) => s.trim()).filter(Boolean);
-                              const code = parts[0] ? parts[0].replace(/[^\w]/g, "") : "";
-                              if (!code) return null;
-                              let country = scrapeCountry || "India";
-                              let flow = scrapeTradeFlow === "exports" ? "Exporters" : "Importers";
+                      {/* Active Pipeline */}
+                      <div
+                        style={{
+                          background: "#faf5ff",
+                          border: "1px solid #e9d5ff",
+                          borderRadius: "10px",
+                          padding: "10px 12px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "4px",
+                        }}
+                      >
+                        <span style={{ fontSize: "10px", fontWeight: 700, color: "#6b21a8", textTransform: "uppercase" }}>
+                          Pipeline
+                        </span>
+                        <div style={{ fontSize: "18px", fontWeight: 800, color: "#7e22ce" }}>
+                          {batchStatus.workerCount || 4}x Parallel
+                        </div>
+                        <span style={{ fontSize: "10px", color: "#6b21a8" }}>
+                          STS Direct OAuth2
+                        </span>
+                      </div>
+                    </div>
 
-                              if (parts.length >= 2) {
-                                const p2 = parts[1].toLowerCase();
-                                if (p2.includes("exp") || p2 === "e") flow = "Exporters";
-                                else if (p2.includes("imp") || p2 === "i") flow = "Importers";
-                                else country = parts[1];
-                              }
-                              if (parts.length >= 3) {
-                                const p3 = parts[2].toLowerCase();
-                                if (p3.includes("exp") || p3 === "e") flow = "Exporters";
-                                else if (p3.includes("imp") || p3 === "i") flow = "Importers";
-                              }
-                              return { code, country, flow };
-                            })
-                            .filter((p): p is { code: string; country: string; flow: string } => Boolean(p));
-
-                          if (previews.length === 0) return null;
+                    {/* 3. 4 Parallel Worker Telemetry Cards Grid */}
+                    <div>
+                      <div style={{ fontSize: "12px", fontWeight: 700, color: "#1e293b", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <RefreshCw size={13} className="spin" style={{ color: "#2563eb" }} />
+                        <span>Live Telemetry per Worker Account:</span>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                        {(batchStatus.active && batchStatus.active.length > 0
+                          ? batchStatus.active
+                          : [1, 2, 3, 4].map((id: number) => ({
+                            workerId: id,
+                            email: `Worker #${id}`,
+                            displayAccount: `Account #${id}`,
+                            status: "IDLE",
+                            currentCompany: "Connecting...",
+                          }))
+                        ).map((w: any) => {
+                          const isFetching = w.status === "FETCHING";
+                          const isEnriching = w.status === "ENRICHING";
+                          const isDone = w.status === "TASK_DONE";
+                          const badgeColor = isFetching
+                            ? { bg: "#fef3c7", text: "#b45309", border: "#fde68a", label: `⚡ Page ${w.page || 1}/${w.totalPages || 1}` }
+                            : isEnriching
+                              ? { bg: "#dbeafe", text: "#1d4ed8", border: "#bfdbfe", label: `🔍 Enriching (${w.currentRecord || 0}/${w.totalOnPage || 100})` }
+                              : isDone
+                                ? { bg: "#dcfce7", text: "#15803d", border: "#bbf7d0", label: "✅ Page Saved" }
+                                : { bg: "#f1f5f9", text: "#475569", border: "#e2e8f0", label: "⏳ Idle / Waiting" };
 
                           return (
-                            <div style={{ marginTop: "8px" }}>
-                              <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
-                                Live Task Preview:
-                              </span>
+                            <div
+                              key={w.workerId}
+                              style={{
+                                background: "#ffffff",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "10px",
+                                padding: "9px 12px",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "5px",
+                                boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                  <span style={{ fontWeight: 800, fontSize: "12px", color: "#0f172a" }}>
+                                    Worker #{w.workerId}
+                                  </span>
+                                  <span style={{ fontSize: "10.5px", color: "#64748b" }}>
+                                    ({w.displayAccount || w.email?.split("@")[0] || `Acc ${w.workerId}`})
+                                  </span>
+                                </div>
+                                <span
+                                  style={{
+                                    fontSize: "10px",
+                                    fontWeight: 700,
+                                    padding: "2px 7px",
+                                    borderRadius: "8px",
+                                    background: badgeColor.bg,
+                                    color: badgeColor.text,
+                                    border: `1px solid ${badgeColor.border}`,
+                                  }}
+                                >
+                                  {badgeColor.label}
+                                </span>
+                              </div>
+
+                              <div style={{ fontSize: "11px", color: "#1e293b", fontWeight: 600 }}>
+                                {w.hsCode ? (
+                                  <>
+                                    <span style={{ background: "#f1f5f9", padding: "1px 6px", borderRadius: "6px" }}>
+                                      HS {w.hsCode}
+                                    </span>{" "}
+                                    • {w.countryName || "India"} ({w.tradeFlow || "exports"})
+                                  </>
+                                ) : (
+                                  <span style={{ color: "#94a3b8" }}>Standby / Ready</span>
+                                )}
+                              </div>
+
                               <div
                                 style={{
-                                  display: "flex",
-                                  flexWrap: "wrap",
-                                  gap: "6px",
-                                  marginTop: "4px",
-                                  maxHeight: "75px",
-                                  overflowY: "auto",
+                                  fontSize: "11px",
+                                  color: "#475569",
+                                  background: "#f8fafc",
+                                  padding: "4px 8px",
+                                  borderRadius: "6px",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
                                 }}
+                                title={w.currentCompany}
                               >
-                                {previews.map((p, idx) => (
-                                  <span
-                                    key={idx}
-                                    style={{
-                                      fontSize: "11px",
-                                      background: "#eff6ff",
-                                      border: "1px solid #bfdbfe",
-                                      borderRadius: "6px",
-                                      padding: "3px 8px",
-                                      color: "#1e40af",
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "4px",
-                                    }}
-                                  >
-                                    <strong>HS {p.code}</strong>
-                                    <span style={{ color: "#93c5fd" }}>•</span>
-                                    <span>📍 {p.country}</span>
-                                    <span style={{ color: "#93c5fd" }}>•</span>
-                                    <span style={{ fontWeight: 600, color: p.flow === "Exporters" ? "#059669" : "#0284c7" }}>
-                                      {p.flow}
-                                    </span>
-                                  </span>
-                                ))}
+                                🏢 {w.currentCompany || "Processing task..."}
+                              </div>
+
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10px", color: "#64748b" }}>
+                                <span>Task: <strong>{w.extractedThisTask || 0}</strong></span>
+                                <span>Total Saved: <strong>{w.totalExtracted || 0}</strong></span>
                               </div>
                             </div>
                           );
-                        })()}
+                        })}
                       </div>
+                    </div>
 
-                      {/* Fallback Country & Flow Settings */}
+                    {/* 4. Live Activity Stream / Console ("Kya hua") */}
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                        <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <Terminal size={13} style={{ color: "#2563eb" }} />
+                          <span>Real-time Live Activity Console ("Kya Hua"):</span>
+                        </div>
+                        <span style={{ fontSize: "10.5px", color: "#64748b" }}>
+                          Live Event Stream ({batchStatus.logs?.length || 0} events)
+                        </span>
+                      </div>
+                      <div
+                        ref={logContainerRef}
+                        style={{
+                          background: "#090d16",
+                          borderRadius: "10px",
+                          border: "1px solid #1e293b",
+                          padding: "10px 12px",
+                          height: "135px",
+                          overflowY: "auto",
+                          fontFamily: "var(--font-mono)",
+                          fontSize: "11px",
+                          lineHeight: "1.6",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "2px",
+                        }}
+                      >
+                        {batchStatus.logs && batchStatus.logs.length > 0 ? (
+                          batchStatus.logs.map((log: string, idx: number) => {
+                            const isDone = log.includes("COMPLETED") || log.includes("Saved") || log.includes("FINISHED");
+                            const isError = log.includes("Error") || log.includes("FAILED") || log.includes("❌");
+                            const color = isDone ? "#4ade80" : isError ? "#f87171" : "#93c5fd";
+                            return (
+                              <div key={idx} style={{ color }}>
+                                {log}
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div style={{ color: "#64748b" }}>Initializing distributed queue and authenticated sessions...</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* ========================================================== */
+                  /* BATCH CONFIGURATION FORM (IDLE / READY TO RUN)             */
+                  /* ========================================================== */
+                  <>
+                    {/* Completed HS Codes & Downloads from previous batch */}
+                    {batchStatus?.completed && batchStatus.completed.length > 0 && (
                       <div
                         style={{
-                          background: "#f8fafc",
-                          border: "1px solid #e2e8f0",
-                          borderRadius: "10px",
+                          background: "#f0fdf4",
+                          border: "1px solid #86efac",
+                          borderRadius: "12px",
                           padding: "10px 14px",
                           marginBottom: "14px",
                         }}
                       >
-                        <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "8px" }}>
-                          Fallback Settings (Used if Country/Flow is not specified in a line above):
+                        <div style={{ fontSize: "12px", fontWeight: 700, color: "#15803d", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <CheckCircle size={14} style={{ color: "#16a34a" }} />
+                          <span>Recently Completed Extractions ({batchStatus.completed.length} HS Codes Ready):</span>
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                          <div>
-                            <label className="modal-label" style={{ fontSize: "11px" }}>Default Country</label>
-                            <select
-                              value={scrapeCountryCode}
-                              onChange={(e) => {
-                                const code = e.target.value;
-                                const found = ALL_COUNTRIES.find((c) => c.code === code);
-                                setScrapeCountryCode(code);
-                                setScrapeCountry(found ? found.name : "World");
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                          {batchStatus.completed.map((c: any) => (
+                            <button
+                              key={c.hsCode}
+                              type="button"
+                              onClick={() => handleExport("xlsx", c.hsCode, c.countryName || scrapeCountry)}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                padding: "5px 10px",
+                                background: "#ffffff",
+                                border: "1px solid #86efac",
+                                borderRadius: "7px",
+                                fontSize: "11.5px",
+                                fontWeight: 600,
+                                color: "#166534",
+                                cursor: "pointer",
                               }}
-                              className="modal-select"
-                              style={{ height: "36px", fontSize: "12px" }}
+                              title={`Download dedicated Excel for HS ${c.hsCode}`}
                             >
-                              {ALL_COUNTRIES.map((c) => (
-                                <option key={c.code} value={c.code}>
-                                  {c.flag} {c.name} {c.code === "000" ? "(000)" : `(ISO ${c.code})`}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="modal-label" style={{ fontSize: "11px" }}>Default Flow</label>
-                            <select
-                              value={scrapeTradeFlow}
-                              onChange={(e) => setScrapeTradeFlow(e.target.value as "exports" | "imports")}
-                              className="modal-select"
-                              style={{ height: "36px", fontSize: "12px", fontWeight: 600 }}
-                            >
-                              <option value="exports">↗ Exporters / Suppliers</option>
-                              <option value="imports">↙ Importers / Buyers</option>
-                            </select>
-                          </div>
+                              <FileSpreadsheet size={13} style={{ color: "#16a34a" }} />
+                              <span>Download HS {c.hsCode} ({c.count} records)</span>
+                            </button>
+                          ))}
                         </div>
                       </div>
-                    </>
-                  )}
+                    )}
+
+                    {/* Account Login Setup Section - 4 Accounts */}
+                    <div
+                      style={{
+                        background: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "12px",
+                        padding: "12px 14px",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        <div style={{ fontSize: "12px", fontWeight: 700, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span>🔐</span>
+                          <span>TradeMap 4-Account Cloud Cluster (All 4 Configured)</span>
+                        </div>
+                        <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: 700 }}>4 Accounts Ready</span>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
+                        {[
+                          { id: 1, name: "kingamaan14" },
+                          { id: 2, name: "modipriyanshi" },
+                          { id: 3, name: "thakkar3108" },
+                          { id: 4, name: "deepthacker" },
+                        ].map((acc) => (
+                          <button
+                            key={acc.id}
+                            type="button"
+                            onClick={() => handleSetupWorkerAccount(acc.id)}
+                            disabled={openingWorkerId === acc.id}
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              padding: "6px 8px",
+                              borderRadius: "8px",
+                              fontSize: "11px",
+                              fontWeight: 600,
+                              border: "1px solid #cbd5e1",
+                              background: "#ffffff",
+                              color: "#334155",
+                              cursor: "pointer",
+                              transition: "all 0.15s ease",
+                            }}
+                            title={`Opens Chrome profile for Account #${acc.id} (${acc.name})`}
+                          >
+                            <span style={{ fontWeight: 700, color: "#1d4ed8" }}>Acc #{acc.id}</span>
+                            <span style={{ fontSize: "9.5px", color: "#64748b" }}>{acc.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Worker Concurrency Selector - 1x to 4x */}
+                    <div className="modal-form-group" style={{ marginBottom: "14px" }}>
+                      <label className="modal-label">Parallel Worker Speed & Accounts</label>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
+                        {[
+                          { count: 1, label: "1 Account", tag: "Sequential" },
+                          { count: 2, label: "2 Accounts ⚡", tag: "2x Parallel" },
+                          { count: 3, label: "3 Accounts 🚀", tag: "3x Super Fast" },
+                          { count: 4, label: "4 Accounts 👑", tag: "4x Max Speed" },
+                        ].map((w) => (
+                          <button
+                            key={w.count}
+                            type="button"
+                            onClick={() => setBatchWorkerCount(w.count)}
+                            style={{
+                              padding: "8px 6px",
+                              borderRadius: "8px",
+                              border: batchWorkerCount === w.count ? "1.5px solid #2563eb" : "1px solid #e2e8f0",
+                              background: batchWorkerCount === w.count ? "#eff6ff" : "#ffffff",
+                              color: batchWorkerCount === w.count ? "#1d4ed8" : "#475569",
+                              fontWeight: 600,
+                              fontSize: "11.5px",
+                              cursor: "pointer",
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              gap: "2px",
+                            }}
+                          >
+                            <span>{w.label}</span>
+                            <span style={{ fontSize: "9.5px", color: batchWorkerCount === w.count ? "#2563eb" : "#94a3b8" }}>
+                              {w.tag}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* HS Codes List Textarea with Live Task Preview */}
+                    <div className="modal-form-group" style={{ marginBottom: "14px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                        <label className="modal-label" style={{ margin: 0 }}>
+                          List of Tasks (HS Code, Country, Trade Flow)
+                        </label>
+                        <span style={{ fontSize: "11px", color: "#2563eb", fontWeight: 600 }}>
+                          {batchHsInput.split(/\r?\n/).filter((s) => s.trim()).length} Tasks Queued
+                        </span>
+                      </div>
+                      <textarea
+                        rows={4}
+                        value={batchHsInput}
+                        onChange={(e) => setBatchHsInput(e.target.value)}
+                        placeholder={"Type or paste line-by-line, for example:\n0101, India, Exporters\n1006, World, Importers\n5208, Germany, Exporters\n3004 (uses fallback below)"}
+                        style={{
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: "10px",
+                          border: "1px solid #cbd5e1",
+                          fontSize: "12.5px",
+                          fontFamily: "var(--font-mono)",
+                          color: "#0f172a",
+                          background: "#ffffff",
+                          outline: "none",
+                          resize: "vertical",
+                          lineHeight: "1.6",
+                        }}
+                      />
+
+                      {/* Live Parsed Preview Badges */}
+                      {(() => {
+                        const previews = batchHsInput
+                          .split(/\r?\n/)
+                          .map((line) => {
+                            const parts = line.split(/[,|\t]+/).map((s) => s.trim()).filter(Boolean);
+                            const code = parts[0] ? parts[0].replace(/[^\w]/g, "") : "";
+                            if (!code) return null;
+                            let country = scrapeCountry || "India";
+                            let flow = scrapeTradeFlow === "exports" ? "Exporters" : "Importers";
+
+                            if (parts.length >= 2) {
+                              const p2 = parts[1].toLowerCase();
+                              if (p2.includes("exp") || p2 === "e") flow = "Exporters";
+                              else if (p2.includes("imp") || p2 === "i") flow = "Importers";
+                              else country = parts[1];
+                            }
+                            if (parts.length >= 3) {
+                              const p3 = parts[2].toLowerCase();
+                              if (p3.includes("exp") || p3 === "e") flow = "Exporters";
+                              else if (p3.includes("imp") || p3 === "i") flow = "Importers";
+                            }
+                            return { code, country, flow };
+                          })
+                          .filter((p): p is { code: string; country: string; flow: string } => Boolean(p));
+
+                        if (previews.length === 0) return null;
+
+                        return (
+                          <div style={{ marginTop: "8px" }}>
+                            <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                              Live Task Preview:
+                            </span>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                gap: "6px",
+                                marginTop: "4px",
+                                maxHeight: "75px",
+                                overflowY: "auto",
+                              }}
+                            >
+                              {previews.map((p, idx) => (
+                                <span
+                                  key={idx}
+                                  style={{
+                                    fontSize: "11px",
+                                    background: "#eff6ff",
+                                    border: "1px solid #bfdbfe",
+                                    borderRadius: "6px",
+                                    padding: "3px 8px",
+                                    color: "#1e40af",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "4px",
+                                  }}
+                                >
+                                  <strong>HS {p.code}</strong>
+                                  <span style={{ color: "#93c5fd" }}>•</span>
+                                  <span>📍 {p.country}</span>
+                                  <span style={{ color: "#93c5fd" }}>•</span>
+                                  <span style={{ fontWeight: 600, color: p.flow === "Exporters" ? "#059669" : "#0284c7" }}>
+                                    {p.flow}
+                                  </span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Fallback Country & Flow Settings */}
+                    <div
+                      style={{
+                        background: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: "10px",
+                        padding: "10px 14px",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "8px" }}>
+                        Fallback Settings (Used if Country/Flow is not specified in a line above):
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                        <div>
+                          <label className="modal-label" style={{ fontSize: "11px" }}>Default Country</label>
+                          <select
+                            value={scrapeCountryCode}
+                            onChange={(e) => {
+                              const code = e.target.value;
+                              const found = ALL_COUNTRIES.find((c) => c.code === code);
+                              setScrapeCountryCode(code);
+                              setScrapeCountry(found ? found.name : "World");
+                            }}
+                            className="modal-select"
+                            style={{ height: "36px", fontSize: "12px" }}
+                          >
+                            {ALL_COUNTRIES.map((c) => (
+                              <option key={c.code} value={c.code}>
+                                {c.flag} {c.name} {c.code === "000" ? "(000)" : `(ISO ${c.code})`}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="modal-label" style={{ fontSize: "11px" }}>Default Flow</label>
+                          <select
+                            value={scrapeTradeFlow}
+                            onChange={(e) => setScrapeTradeFlow(e.target.value as "exports" | "imports")}
+                            className="modal-select"
+                            style={{ height: "36px", fontSize: "12px", fontWeight: 600 }}
+                          >
+                            <option value="exports">↗ Exporters / Suppliers</option>
+                            <option value="imports">↙ Importers / Buyers</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Pinned Footer Action Buttons - ALWAYS PINNED AT BOTTOM */}
