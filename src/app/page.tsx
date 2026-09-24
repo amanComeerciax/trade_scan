@@ -314,9 +314,8 @@ export default function Dashboard() {
       if (!res.ok) {
         alert(data.error || "Failed to start batch scrape.");
       } else {
-        const statusRes = await fetch("/api/scraper/batch");
-        const statusData = await statusRes.json();
-        setBatchStatus(statusData);
+        // Seamlessly redirect to the dedicated batch dashboard
+        window.location.href = `/batch?hs=${encodeURIComponent(targetHs)}&flow=${encodeURIComponent(scrapeTradeFlow || 'exports')}&country=${encodeURIComponent(scrapeCountryCode || '000')}`;
       }
     } catch (err: any) {
       alert("Network error: " + err.message);
@@ -341,11 +340,17 @@ export default function Dashboard() {
         }),
       });
       const data = await res.json();
-      alert(data.message || "🚀 8 Chrome Browsers Launched & Logged In Successfully!");
+      setNotification({
+        id: Date.now().toString(),
+        title: "🚀 8 Chrome Browsers Launching!",
+        message: `Opening 8 Chrome windows with STS Auto-Login for HS ${targetHs}. They will remain open on your desktop.`,
+        type: "info",
+        hsCode: targetHs,
+      });
     } catch (err: any) {
       alert("Error: " + err.message);
     } finally {
-      setIsLaunching8Browsers(false);
+      setTimeout(() => setIsLaunching8Browsers(false), 3000);
     }
   };
 

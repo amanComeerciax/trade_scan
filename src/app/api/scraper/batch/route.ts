@@ -117,6 +117,18 @@ export async function POST(request: Request) {
       const countryCode = (body.countryCode || '000').trim();
       const tradeFlow = (body.tradeFlow || 'exports').trim().toLowerCase();
 
+      // Gracefully close any idle launch_browsers preview processes
+      const launcherPidPath = path.join(process.cwd(), 'scripts', '.launcher_pid.json');
+      if (fs.existsSync(launcherPidPath)) {
+        try {
+          const { pid } = JSON.parse(fs.readFileSync(launcherPidPath, 'utf8'));
+          if (pid) {
+            try { process.kill(pid); } catch {}
+          }
+          fs.unlinkSync(launcherPidPath);
+        } catch {}
+      }
+
       const pidFilePath = path.join(process.cwd(), 'scripts', '.batch_pid.json');
       // Launch 8-Chrome Parallel Engine for given HS Code
       const scriptPath = path.join(process.cwd(), 'scripts', 'multiChrome020130.js');
@@ -170,6 +182,16 @@ export async function POST(request: Request) {
       const countryCode = (body.countryCode || '000').trim();
       const tradeFlow = (body.tradeFlow || 'exports').trim().toLowerCase();
 
+      const launcherPidPath = path.join(process.cwd(), 'scripts', '.launcher_pid.json');
+      if (fs.existsSync(launcherPidPath)) {
+        try {
+          const { pid } = JSON.parse(fs.readFileSync(launcherPidPath, 'utf8'));
+          if (pid) {
+            try { process.kill(pid); } catch {}
+          }
+        } catch {}
+      }
+
       const scriptPath = path.join(process.cwd(), 'scripts', 'launchAllAccounts.js');
       const child = spawn(
         process.execPath,
@@ -180,6 +202,9 @@ export async function POST(request: Request) {
           cwd: process.cwd(),
         }
       );
+      if (child.pid) {
+        fs.writeFileSync(launcherPidPath, JSON.stringify({ pid: child.pid }));
+      }
       child.unref();
 
       const accountCount = Object.keys(process.env).filter(

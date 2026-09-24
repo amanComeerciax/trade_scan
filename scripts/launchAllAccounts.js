@@ -128,6 +128,7 @@ async function loginAndLaunchAccount(acc) {
   console.log('⏳ Browsers will stay open. Press Ctrl+C in terminal if you ever want to close.');
   console.log('═'.repeat(72) + '\n');
 
-  // Keep process alive so browsers remain open
+  // Keep process alive indefinitely so browsers remain open
+  setInterval(() => {}, 1000 * 60);
   await new Promise(() => {});
 })();
