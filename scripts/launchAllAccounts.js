@@ -39,6 +39,26 @@ console.log(`📋 Found ${accounts.length} Accounts in .env. Initializing stagge
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
+async function getStsToken(acc) {
+  try {
+    const res = await fetch('https://sts.marketanalysis.intracen.org/connect/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: 'TradeMap',
+        grant_type: 'password',
+        username: acc.user,
+        password: acc.pass,
+        scope: 'openid profile offline_access TradeMap.API Account.API',
+      }).toString(),
+    });
+    const data = await res.json();
+    return data.access_token || null;
+  } catch {
+    return null;
+  }
+}
+
 async function loginAndLaunchAccount(acc) {
   const accountName = acc.user.split('@')[0];
 
@@ -59,13 +79,15 @@ async function loginAndLaunchAccount(acc) {
     } catch {}
   }
 
+  // Pre-fetch token
+  const token = await getStsToken(acc);
+
   try {
     const context = await chromium.launchPersistentContext(userDataDir, {
       headless: false,
       channel: 'chrome',
       viewport: null,
       args: [
-        '--no-sandbox',
         '--disable-blink-features=AutomationControlled',
         '--no-first-run',
         '--no-default-browser-check',
@@ -73,36 +95,71 @@ async function loginAndLaunchAccount(acc) {
         '--disable-background-networking',
         '--disable-default-apps',
         '--disable-extensions',
+        '--hide-crash-restore-bubble',
       ],
     });
 
+    if (token) {
+      await context.addInitScript((tok) => {
+        try {
+          const raw = localStorage.getItem('0-TradeMap');
+          const parsed = raw ? JSON.parse(raw) : {};
+          if (!parsed.authnResult) parsed.authnResult = {};
+          parsed.authnResult.access_token = tok;
+          localStorage.setItem('0-TradeMap', JSON.stringify(parsed));
+        } catch {}
+      }, token);
+    }
+
     const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
 
-    console.log(`🔐 [Browser #${acc.idx}] Opening STS Login page...`);
-    await page.goto('https://sts.marketanalysis.intracen.org/en/Account/Login', {
+    console.log(`🌐 [Browser #${acc.idx}] Opening TradeMap for session check...`);
+    await page.goto('https://www.trademap.org', {
       waitUntil: 'domcontentloaded',
       timeout: 60000,
     }).catch(() => {});
     await page.waitForTimeout(2000);
 
-    // Check if login form is present
-    const emailField = await page.$('#Email');
-    if (emailField) {
-      console.log(`✍️ [Browser #${acc.idx}] Typing credentials for ${acc.user}...`);
-      await page.fill('#Email', acc.user);
-      await page.fill('#Password', acc.pass);
+    // Dismiss survey modal if present
+    try {
+      const declineBtn = await page.$('button:has-text("Decline"), button:has-text("Accept"), button.btn-close, [aria-label="Close"]');
+      if (declineBtn) await declineBtn.click().catch(() => {});
+    } catch {}
 
-      console.log(`🔑 [Browser #${acc.idx}] Submitting Login...`);
+    // Check if "Sign in or register" button is visible
+    const signInBtn = await page.$('a:has-text("Sign in"), button:has-text("Sign in")');
+    if (signInBtn) {
+      console.log(`🔐 [Browser #${acc.idx}] Triggering TradeMap OAuth Sign In...`);
       await Promise.all([
         page.waitForNavigation({ timeout: 25000 }).catch(() => {}),
-        page.click('button[type="submit"]'),
+        signInBtn.click(),
       ]);
-      await page.waitForTimeout(3000);
-      console.log(`✅ [Browser #${acc.idx}] Logged in successfully!`);
+      await page.waitForTimeout(2000);
+
+      // Fill STS credentials on STS page
+      const emailField = await page.$('#Email, input[name="Email"]');
+      if (emailField) {
+        console.log(`✍️ [Browser #${acc.idx}] Auto-filling credentials for ${acc.user}...`);
+        await emailField.fill(acc.user);
+        const passField = await page.$('#Password, input[name="Password"]');
+        if (passField) await passField.fill(acc.pass);
+
+        console.log(`🔑 [Browser #${acc.idx}] Submitting Login...`);
+        const submitBtn = await page.$('button[type="submit"], button[name="button"][value="login"]');
+        if (submitBtn) {
+          await Promise.all([
+            page.waitForNavigation({ timeout: 30000 }).catch(() => {}),
+            submitBtn.click(),
+          ]);
+        }
+        await page.waitForTimeout(3000);
+        console.log(`✅ [Browser #${acc.idx}] Logged in via TradeMap OAuth successfully!`);
+      }
     } else {
-      console.log(`ℹ️ [Browser #${acc.idx}] Session already active.`);
+      console.log(`ℹ️ [Browser #${acc.idx}] Already logged in!`);
     }
 
+    // Now navigate to the target HS code page
     console.log(`🌐 [Browser #${acc.idx}] Redirecting to Target URL: ${targetUrl}`);
     await page.goto(targetUrl, {
       waitUntil: 'domcontentloaded',
@@ -110,6 +167,13 @@ async function loginAndLaunchAccount(acc) {
     }).catch((err) => {
       console.warn(`⚠️ [Browser #${acc.idx}] Navigation warning: ${err.message}`);
     });
+    await page.waitForTimeout(2000);
+
+    // Dismiss any survey modal on target page
+    try {
+      const declineBtn = await page.$('button:has-text("Decline"), button:has-text("Accept"), button.btn-close, [aria-label="Close"]');
+      if (declineBtn) await declineBtn.click().catch(() => {});
+    } catch {}
 
     console.log(`🎉 [Browser #${acc.idx}] Ready & Open on HS ${hsCode} page!`);
   } catch (err) {
