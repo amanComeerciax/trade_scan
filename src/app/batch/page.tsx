@@ -754,7 +754,7 @@ export default function BatchDashboard() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px', color: '#cbd5e1' }}>
                   <span style={{ color: '#64748b' }}>Claimed Page:</span>
                   <span style={{ fontWeight: '700', color: '#38bdf8' }}>
-                    {w?.page ? `Page ${w.page} / ${w.totalPages || 200}` : 'Standby'}
+                    {w?.page ? `Page ${w.page} / ${state?.totalTasks || w?.totalPages || 111}` : 'Standby'}
                   </span>
                 </div>
 

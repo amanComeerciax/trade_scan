@@ -607,6 +607,9 @@ async function runWorkerInner(worker) {
         records = listResult.records;
         if (listResult.nbPages && listResult.nbPages > 0) {
           TOTAL_PAGES = listResult.nbPages;
+          ALL_WORKERS.forEach((wk) => {
+            if (workerStates[wk.id]) workerStates[wk.id].totalPages = TOTAL_PAGES;
+          });
         }
         break;
       }
