@@ -112,6 +112,86 @@ export async function POST(request: Request) {
       });
     }
 
+    if (body.action === 'start_extraction' || body.action === 'start_020130') {
+      const hsCode = (body.hsCode || '020130').trim();
+      const countryCode = (body.countryCode || '000').trim();
+      const tradeFlow = (body.tradeFlow || 'exports').trim().toLowerCase();
+
+      const pidFilePath = path.join(process.cwd(), 'scripts', '.batch_pid.json');
+      // Launch 8-Chrome Parallel Engine for given HS Code
+      const scriptPath = path.join(process.cwd(), 'scripts', 'multiChrome020130.js');
+      const logFilePath = path.join(process.cwd(), 'scripts', 'batch_scraper.log');
+      const logOut = fs.openSync(logFilePath, 'a');
+
+      const child = spawn(
+        process.execPath,
+        [scriptPath, hsCode, countryCode, tradeFlow],
+        {
+          detached: true,
+          stdio: ['ignore', logOut, logOut],
+          cwd: process.cwd(),
+        }
+      );
+
+      if (child.pid) {
+        fs.writeFileSync(pidFilePath, JSON.stringify({ pid: child.pid }));
+      }
+      child.unref();
+
+      const accountCount = Object.keys(process.env).filter(
+        (k) => k.startsWith('TRADEMAP_ACCOUNT_') && k.endsWith('_USER')
+      ).length || 8;
+
+      const initialState = {
+        isRunning: true,
+        shouldStop: false,
+        status: 'RUNNING',
+        workerCount: accountCount,
+        totalTasks: 200,
+        completedTasks: 0,
+        totalExtracted: 0,
+        progressPercent: 0,
+        logs: [
+          `[${new Date().toLocaleTimeString()}] 🚀 Launching ${accountCount} Chrome Browsers for HS ${hsCode} (${tradeFlow}, Country: ${countryCode})...`
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+      try { fs.writeFileSync(stateFilePath, JSON.stringify(initialState, null, 2)); } catch {}
+
+      return NextResponse.json({
+        success: true,
+        isRunning: true,
+        message: `🚀 ${accountCount}-Chrome Engine started for HS ${hsCode} (${tradeFlow})!`,
+      });
+    }
+
+    if (body.action === 'launch_browsers') {
+      const hsCode = (body.hsCode || '020130').trim();
+      const countryCode = (body.countryCode || '000').trim();
+      const tradeFlow = (body.tradeFlow || 'exports').trim().toLowerCase();
+
+      const scriptPath = path.join(process.cwd(), 'scripts', 'launchAllAccounts.js');
+      const child = spawn(
+        process.execPath,
+        [scriptPath, hsCode, countryCode, tradeFlow],
+        {
+          detached: true,
+          stdio: 'ignore',
+          cwd: process.cwd(),
+        }
+      );
+      child.unref();
+
+      const accountCount = Object.keys(process.env).filter(
+        (k) => k.startsWith('TRADEMAP_ACCOUNT_') && k.endsWith('_USER')
+      ).length || 8;
+
+      return NextResponse.json({
+        success: true,
+        message: `🚀 ${accountCount} Chrome browsers launched with auto-login for HS ${hsCode} (${tradeFlow})!`,
+      });
+    }
+
     const {
       hsCodes = [],
       workerCount = 4,
@@ -119,14 +199,23 @@ export async function POST(request: Request) {
       tradeFlow = 'exports',
     } = body;
 
-    const parseLine = (line: string, assignedWorkerId?: number) => {
+    interface TaskItem {
+      hsCode: string;
+      countryCode: string;
+      countryName: string;
+      tradeFlow: string;
+      startPage: number | null;
+      assignedWorkerId: number | null;
+    }
+
+    const parseLine = (line: string, assignedWorkerId?: number): TaskItem | null => {
       const parts = line.split(/[,|\t]+/).map((s) => s.trim()).filter(Boolean);
       const code = parts[0] ? parts[0].replace(/[^\w]/g, '') : '';
       if (!code) return null;
 
-      let cCode = countryCode;
+      let cCode = String(countryCode || 'WORLD');
       let cName = countryCode === '699' ? 'India' : 'World';
-      let fFlow = tradeFlow;
+      let fFlow = String(tradeFlow || 'exports');
 
       if (parts.length >= 2) {
         const p2 = parts[1].toLowerCase();
@@ -154,16 +243,21 @@ export async function POST(request: Request) {
         }
       }
 
+      let customStartPage: number | null = null;
+      const pageMatch = line.match(/(?:page|p|start)\s*[:=]?\s*(\d+)/i) || line.match(/:(\d+)$/);
+      if (pageMatch) customStartPage = parseInt(pageMatch[1], 10);
+
       return {
         hsCode: code,
         countryCode: cCode,
         countryName: cName,
         tradeFlow: fFlow,
+        startPage: customStartPage,
         assignedWorkerId: assignedWorkerId || null,
       };
     };
 
-    let tasks: { hsCode: string; countryCode: string; countryName: string; tradeFlow: string; assignedWorkerId: number | null }[] = [];
+    let tasks: TaskItem[] = [];
 
     if (body.workerTasks && typeof body.workerTasks === 'object') {
       for (const [wIdStr, lines] of Object.entries(body.workerTasks)) {
@@ -188,7 +282,7 @@ export async function POST(request: Request) {
 
       tasks = rawLines
         .map((line) => parseLine(line))
-        .filter((t): t is { hsCode: string; countryCode: string; countryName: string; tradeFlow: string; assignedWorkerId: number | null } => Boolean(t));
+        .filter((t): t is TaskItem => Boolean(t));
     }
 
     if (tasks.length === 0) {

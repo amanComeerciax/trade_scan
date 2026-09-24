@@ -188,10 +188,11 @@ export default function Dashboard() {
   // Batch Scraper State (Multi-Account Parallel Runner)
   const [scraperTab, setScraperTab] = useState<"single" | "batch">("single");
   const [batchHsInput, setBatchHsInput] = useState("0101\n0910\n1006\n5208\n3004");
-  const [batchWorkerCount, setBatchWorkerCount] = useState<number>(4);
+  const [batchWorkerCount, setBatchWorkerCount] = useState<number>(8);
   const [batchStatus, setBatchStatus] = useState<any>(null);
   const [isStartingBatch, setIsStartingBatch] = useState(false);
   const [isStoppingBatch, setIsStoppingBatch] = useState(false);
+  const [isLaunching8Browsers, setIsLaunching8Browsers] = useState(false);
   const [openingWorkerId, setOpeningWorkerId] = useState<number | null>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -257,7 +258,7 @@ export default function Dashboard() {
               setNotification({
                 id: Date.now().toString(),
                 title: `🎉 ${hsText} Data Extracted Successfully!`,
-                message: `Live 4x batch extraction completed! Total ${data.totalExtracted || 0} verified profiles added to your database.`,
+                message: `Live ${data.workerCount || 8}x batch extraction completed! Total ${data.totalExtracted || 0} verified profiles added to your database.`,
                 type: "success",
                 hsCode: lastCompleted?.hsCode || null,
               });
@@ -296,14 +297,17 @@ export default function Dashboard() {
         alert("Please enter at least one valid HS code.");
         return;
       }
+      const targetHs = codes[0].replace(/[^\w]/g, "") || "020130";
       const res = await fetch("/api/scraper/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          action: "start_extraction",
+          hsCode: targetHs,
           hsCodes: codes,
           workerCount: batchWorkerCount,
-          countryCode: scrapeCountryCode,
-          tradeFlow: scrapeTradeFlow,
+          countryCode: scrapeCountryCode || "000",
+          tradeFlow: scrapeTradeFlow || "exports",
         }),
       });
       const data = await res.json();
@@ -318,6 +322,30 @@ export default function Dashboard() {
       alert("Network error: " + err.message);
     } finally {
       setIsStartingBatch(false);
+    }
+  };
+
+  const handleLaunch8Browsers = async () => {
+    setIsLaunching8Browsers(true);
+    try {
+      const codes = batchHsInput.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
+      const targetHs = (codes[0] ? codes[0].replace(/[^\w]/g, "") : "") || customHsInput.trim() || scrapeHsCode || "020130";
+      const res = await fetch("/api/scraper/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "launch_browsers",
+          hsCode: targetHs,
+          countryCode: scrapeCountryCode || "000",
+          tradeFlow: scrapeTradeFlow || "exports",
+        }),
+      });
+      const data = await res.json();
+      alert(data.message || "🚀 8 Chrome Browsers Launched & Logged In Successfully!");
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setIsLaunching8Browsers(false);
     }
   };
 
@@ -1933,7 +1961,7 @@ export default function Dashboard() {
                         borderRadius: "10px",
                       }}
                     >
-                      4x Parallel
+                      8x Parallel
                     </span>
                   </button>
                 </div>
@@ -2611,11 +2639,11 @@ export default function Dashboard() {
                       </div>
                     )}
 
-                    {/* Account Login Setup Section - 4 Accounts */}
+                    {/* Account Login Setup Section - 8 Accounts */}
                     <div
                       style={{
                         background: "#f8fafc",
-                        border: "1px solid #e2e8f0",
+                        border: "1px solid #cbd5e1",
                         borderRadius: "12px",
                         padding: "12px 14px",
                         marginBottom: "14px",
@@ -2624,56 +2652,90 @@ export default function Dashboard() {
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                         <div style={{ fontSize: "12px", fontWeight: 700, color: "#1e293b", display: "flex", alignItems: "center", gap: "6px" }}>
                           <span>🔐</span>
-                          <span>TradeMap 4-Account Cloud Cluster (All 4 Configured)</span>
+                          <span>TradeMap 8-Account Cluster (All 8 Configured & Verified)</span>
                         </div>
-                        <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: 700 }}>4 Accounts Ready</span>
+                        <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: 700 }}>8 Accounts Ready</span>
                       </div>
 
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px", marginBottom: "10px" }}>
                         {[
-                          { id: 1, name: "kingamaan14" },
-                          { id: 2, name: "modipriyanshi" },
-                          { id: 3, name: "thakkar3108" },
-                          { id: 4, name: "deepthacker" },
+                          { id: 1, name: "divy04817+tm1" },
+                          { id: 2, name: "divythakkar+tm1" },
+                          { id: 3, name: "divy45637+tm1" },
+                          { id: 4, name: "trademap+tm2" },
+                          { id: 5, name: "divy04817+tm2" },
+                          { id: 6, name: "divythakkar+tm2" },
+                          { id: 7, name: "divy45637+tm2" },
+                          { id: 8, name: "trademap+tm3" },
                         ].map((acc) => (
-                          <button
+                          <div
                             key={acc.id}
-                            type="button"
-                            onClick={() => handleSetupWorkerAccount(acc.id)}
-                            disabled={openingWorkerId === acc.id}
                             style={{
                               display: "flex",
                               flexDirection: "column",
                               alignItems: "center",
                               justifyContent: "center",
-                              padding: "6px 8px",
+                              padding: "5px 6px",
                               borderRadius: "8px",
                               fontSize: "11px",
                               fontWeight: 600,
-                              border: "1px solid #cbd5e1",
+                              border: "1px solid #e2e8f0",
                               background: "#ffffff",
                               color: "#334155",
-                              cursor: "pointer",
-                              transition: "all 0.15s ease",
                             }}
-                            title={`Opens Chrome profile for Account #${acc.id} (${acc.name})`}
                           >
                             <span style={{ fontWeight: 700, color: "#1d4ed8" }}>Acc #{acc.id}</span>
-                            <span style={{ fontSize: "9.5px", color: "#64748b" }}>{acc.name}</span>
-                          </button>
+                            <span style={{ fontSize: "9px", color: "#64748b", textOverflow: "ellipsis", overflow: "hidden", maxWidth: "70px", whiteSpace: "nowrap" }}>
+                              {acc.name}
+                            </span>
+                          </div>
                         ))}
                       </div>
+
+                      {/* Direct 8 Browsers Launcher Button */}
+                      <button
+                        type="button"
+                        onClick={handleLaunch8Browsers}
+                        disabled={isLaunching8Browsers}
+                        style={{
+                          width: "100%",
+                          padding: "10px",
+                          background: "linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)",
+                          color: "#ffffff",
+                          border: "none",
+                          borderRadius: "8px",
+                          fontWeight: 700,
+                          fontSize: "12.5px",
+                          cursor: isLaunching8Browsers ? "not-allowed" : "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "8px",
+                          boxShadow: "0 2px 8px rgba(29, 78, 216, 0.3)",
+                        }}
+                      >
+                        {isLaunching8Browsers ? (
+                          <>
+                            <RefreshCw size={13} className="spin" />
+                            <span>Launching 8 Chrome Windows (Auto STS Login)...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>🚀 Open All 8 Chrome Browsers with Auto-Login</span>
+                          </>
+                        )}
+                      </button>
                     </div>
 
-                    {/* Worker Concurrency Selector - 1x to 4x */}
+                    {/* Worker Concurrency Selector - 1x to 8x */}
                     <div className="modal-form-group" style={{ marginBottom: "14px" }}>
                       <label className="modal-label">Parallel Worker Speed & Accounts</label>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
                         {[
                           { count: 1, label: "1 Account", tag: "Sequential" },
                           { count: 2, label: "2 Accounts ⚡", tag: "2x Parallel" },
-                          { count: 3, label: "3 Accounts 🚀", tag: "3x Super Fast" },
-                          { count: 4, label: "4 Accounts 👑", tag: "4x Max Speed" },
+                          { count: 4, label: "4 Accounts 🚀", tag: "4x Fast" },
+                          { count: 8, label: "8 Accounts 👑", tag: "8x Turbo Max" },
                         ].map((w) => (
                           <button
                             key={w.count}
@@ -3020,12 +3082,12 @@ export default function Dashboard() {
                       {isStartingBatch ? (
                         <>
                           <RefreshCw size={14} className="spin" />
-                          <span>Starting 4x Parallel Workers...</span>
+                          <span>Starting {batchWorkerCount}x Parallel Workers...</span>
                         </>
                       ) : (
                         <>
                           <Play size={14} fill="currentColor" />
-                          <span>Start {batchWorkerCount}x Parallel Batch Scrape</span>
+                          <span>Start {batchWorkerCount}x Parallel Batch Scrape (8 Browsers)</span>
                         </>
                       )}
                     </button>

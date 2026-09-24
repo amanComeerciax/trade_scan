@@ -46,10 +46,10 @@ function stopAll() {
     try { fs.unlinkSync(pidFilePath); } catch {}
   }
 
-  // 3. Find and kill any node processes running distributedWorkerRunner.js
+  // 3. Find and kill any node processes running scrapers
   if (process.platform === 'win32') {
     try {
-      const psScript = `Get-CimInstance Win32_Process | Where-Object CommandLine -like '*distributedWorkerRunner*' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
+      const psScript = `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*distributedWorkerRunner*' -or $_.CommandLine -like '*multiChrome*' -or $_.CommandLine -like '*scrape020130*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
       execSync(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript}"`, { stdio: 'ignore', timeout: 8000 });
     } catch {}
   }

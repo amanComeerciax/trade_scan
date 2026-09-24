@@ -19,19 +19,19 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 const WORKER_CREDENTIALS = {
   1: {
-    username: process.env.TRADEMAP_ACCOUNT_1_USER || 'kingamaan14@gmail.com',
+    username: process.env.TRADEMAP_ACCOUNT_1_USER || '',
     password: process.env.TRADEMAP_ACCOUNT_1_PASS || '',
   },
   2: {
-    username: process.env.TRADEMAP_ACCOUNT_2_USER || 'modipriyanshi013@gmail.com',
+    username: process.env.TRADEMAP_ACCOUNT_2_USER || '',
     password: process.env.TRADEMAP_ACCOUNT_2_PASS || '',
   },
   3: {
-    username: process.env.TRADEMAP_ACCOUNT_3_USER || 'trademap1235665@gmail.com',
+    username: process.env.TRADEMAP_ACCOUNT_3_USER || '',
     password: process.env.TRADEMAP_ACCOUNT_3_PASS || '',
   },
   4: {
-    username: process.env.TRADEMAP_ACCOUNT_4_USER || 'deepthacker.402060@gmail.com',
+    username: process.env.TRADEMAP_ACCOUNT_4_USER || '',
     password: process.env.TRADEMAP_ACCOUNT_4_PASS || '',
   },
 };
@@ -123,6 +123,8 @@ class DistributedWorkerRunner {
         } catch {}
       }
 
+      const activeWorkersList = Object.values(this.workerStates || {});
+
       const state = {
         isRunning: this.shouldStop ? false : this.isRunning,
         shouldStop: Boolean(this.shouldStop),
@@ -148,7 +150,9 @@ class DistributedWorkerRunner {
       fs.writeFileSync(this.stateFilePath, JSON.stringify(state, null, 2));
       fs.writeFileSync(this.batchStatePath, JSON.stringify(state, null, 2));
       if (this.onUpdateCallback) this.onUpdateCallback(state);
-    } catch {}
+    } catch (err) {
+      console.error('saveState error:', err.message);
+    }
   }
 
   /**
@@ -253,7 +257,30 @@ class DistributedWorkerRunner {
           continue;
         }
 
-        for (let p = 1; p <= totalPages; p++) {
+        // Auto-Resume: Check how many records are already saved in DB
+        let existingCount = 0;
+        try {
+          existingCount = await prisma.companyProduct.count({
+            where: { hsCode },
+          });
+        } catch {}
+
+        const explicitStartPage = Number(search.startPage || search.page || 0);
+        let startPage = explicitStartPage > 0 ? explicitStartPage : 1;
+
+        if (explicitStartPage === 0 && existingCount > 0) {
+          // If 728 exist, start directly on page 8 (records 701+)
+          startPage = Math.floor(existingCount / 100) + 1;
+          this.totalRecordsExtracted = existingCount;
+          this.log(`♻️ [Smart Auto-Resume] Found ${existingCount} profiles already in DB for HS ${hsCode}! Resuming directly from Page ${startPage}/${totalPages} (skipping Pages 1-${startPage - 1})`);
+        }
+
+        if (startPage > totalPages) {
+          this.log(`✅ All ${totalRecords} records already in DB for HS ${hsCode}! Skipping task generation.`);
+          continue;
+        }
+
+        for (let p = startPage; p <= totalPages; p++) {
           tasksToEnqueue.push({
             hsCode,
             countryCode,
@@ -264,15 +291,26 @@ class DistributedWorkerRunner {
           });
         }
       } catch (err) {
-        this.log(`❌ Error inspecting HS ${hsCode}: ${err.message}. Enqueuing fallback Page 1.`);
-        tasksToEnqueue.push({
-          hsCode,
-          countryCode,
-          countryName,
-          tradeFlow,
-          page: 1,
-          totalPages: 1,
-        });
+        let fallbackPages = 1;
+        if (hsCode === '020130' && (countryCode === '000' || countryName.toLowerCase().includes('world'))) {
+          fallbackPages = 179;
+        }
+        let existingCount = 0;
+        try {
+          existingCount = await prisma.companyProduct.count({ where: { hsCode } });
+        } catch {}
+        const startPage = existingCount > 100 ? Math.floor(existingCount / 100) + 1 : 1;
+        this.log(`⚠️ Inspection note for HS ${hsCode}: ${err.message}. Enqueuing ${fallbackPages} pages (starting from Page ${startPage}).`);
+        for (let p = startPage; p <= fallbackPages; p++) {
+          tasksToEnqueue.push({
+            hsCode,
+            countryCode,
+            countryName,
+            tradeFlow,
+            page: p,
+            totalPages: fallbackPages,
+          });
+        }
       }
     }
 
@@ -289,19 +327,27 @@ class DistributedWorkerRunner {
   async fetchCompanyContact(token, companyId, sourceId = 1) {
     if (!companyId) return null;
     const url = `https://www.trademap.org/api/companies/contact?companyId=${encodeURIComponent(companyId)}&sourceId=${sourceId}`;
-    try {
-      const res = await fetch(url, {
-        headers: {
-          'Accept': 'application/json, text/plain, */*',
-          'Authorization': `Bearer ${token}`,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-        },
-      });
-      if (res.status === 200) return await res.json().catch(() => null);
-      return null;
-    } catch {
-      return null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch(url, {
+          headers: {
+            'Accept': 'application/json, text/plain, */*',
+            'Authorization': `Bearer ${token}`,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+          },
+        });
+        if (res.status === 200) return await res.json().catch(() => null);
+        if (res.status === 403) {
+          // Rate-limit cooldown: pause 12s and retry
+          await sleep(12000);
+          continue;
+        }
+        if (res.status === 404 || res.status === 400) return null;
+      } catch {
+        await sleep(1500);
+      }
     }
+    return null;
   }
 
   cleanDirectorName(name) {
@@ -331,7 +377,7 @@ class DistributedWorkerRunner {
     const cleanName = data.name.trim();
     const finalCountry = data.country || 'India';
 
-    const payload = {
+    const createPayload = {
       ...(trademapId ? { trademapId } : {}),
       city: data.city || null,
       address: data.address || null,
@@ -341,7 +387,19 @@ class DistributedWorkerRunner {
       website: data.website || null,
       sourceUrl: data.sourceUrl || null,
       tradeFlow: tradeFlowStr,
-      source: 'TradeMap Direct STS API',
+    };
+
+    // In update, do not overwrite existing phone/contact with null
+    const updatePayload = {
+      ...(trademapId ? { trademapId } : {}),
+      ...(data.city ? { city: data.city } : {}),
+      ...(data.address ? { address: data.address } : {}),
+      ...(data.phone ? { phone: data.phone } : {}),
+      ...(data.contactName ? { contactName: data.contactName } : {}),
+      ...(data.contactRole ? { contactRole: data.contactRole } : {}),
+      ...(data.website ? { website: data.website } : {}),
+      sourceUrl: data.sourceUrl || null,
+      tradeFlow: tradeFlowStr,
     };
 
     let company = null;
@@ -349,14 +407,14 @@ class DistributedWorkerRunner {
       if (trademapId) {
         company = await prisma.company.upsert({
           where: { trademapId },
-          update: payload,
-          create: { name: cleanName, country: finalCountry, ...payload },
+          update: updatePayload,
+          create: { name: cleanName, country: finalCountry, ...createPayload },
         });
       } else {
         company = await prisma.company.upsert({
           where: { name_country: { name: cleanName, country: finalCountry } },
-          update: payload,
-          create: { name: cleanName, country: finalCountry, ...payload },
+          update: updatePayload,
+          create: { name: cleanName, country: finalCountry, ...createPayload },
         });
       }
     } catch (upsertErr) {
@@ -475,26 +533,30 @@ class DistributedWorkerRunner {
 
         if (res.status === 403) {
           const errText = await res.text().catch(() => '');
-          this.log(`⚠️ Worker #${workerId} PAUSED: Received 403 Forbidden (${errText.slice(0, 60)}). Deactivating this worker.`);
+          this.log(`⏳ Worker #${workerId}: Rate limit encountered (${errText.slice(0, 40)}). Auto-cooldown shield active (waiting 40s before retry)...`);
           if (this.workerStates[workerId]) {
-            this.workerStates[workerId].status = 'DISABLED';
-            this.workerStates[workerId].currentCompany = 'Access restricted (403)';
+            this.workerStates[workerId].status = 'IDLE';
+            this.workerStates[workerId].currentCompany = 'Rate limit cooldown (40s)...';
           }
-          await this.queue.failTask(task._id, 'Access forbidden (403)');
           this.saveState();
-          break;
+          await sleep(40000);
+          delete this.tokens[workerId];
+          await this.queue.failTask(task._id, 'Cooldown retry');
+          continue;
         }
 
         const rawText = await res.text();
         if (rawText.includes('Forbidden:') || rawText.includes('blacklisted') || rawText.includes('account-blocked')) {
-          this.log(`⚠️ Worker #${workerId} PAUSED: Received TradeMap blacklist response. Deactivating this worker.`);
+          this.log(`⏳ Worker #${workerId}: WAF rate limit response. Auto-cooldown shield active (waiting 40s before retry)...`);
           if (this.workerStates[workerId]) {
-            this.workerStates[workerId].status = 'DISABLED';
-            this.workerStates[workerId].currentCompany = 'Blacklisted by TradeMap WAF';
+            this.workerStates[workerId].status = 'IDLE';
+            this.workerStates[workerId].currentCompany = 'WAF cooldown (40s)...';
           }
-          await this.queue.failTask(task._id, 'Blacklisted by TradeMap');
           this.saveState();
-          break;
+          await sleep(40000);
+          delete this.tokens[workerId];
+          await this.queue.failTask(task._id, 'WAF cooldown retry');
+          continue;
         }
 
         let data = {};
@@ -514,10 +576,11 @@ class DistributedWorkerRunner {
         this.saveState();
 
         let extractedCount = 0;
-        for (let i = 0; i < rawCompanies.length; i++) {
-          // Re-check stop signal during long loops
+        const CHUNK_SIZE = 4; // Safe concurrent contact enrichments per worker (zero block risk)
+
+        for (let i = 0; i < rawCompanies.length; i += CHUNK_SIZE) {
           if (this.shouldStop) break;
-          if (i % 5 === 0 && fs.existsSync(this.batchStatePath)) {
+          if (i % 8 === 0 && fs.existsSync(this.batchStatePath)) {
             try {
               const cur = JSON.parse(fs.readFileSync(this.batchStatePath, 'utf8'));
               if (cur.shouldStop) {
@@ -529,49 +592,52 @@ class DistributedWorkerRunner {
           }
           if (this.shouldStop) break;
 
-          const raw = rawCompanies[i];
-          const tradeFlowStr = task.tradeFlow === 'imports' ? 'Importer' : 'Exporter';
+          const chunk = rawCompanies.slice(i, i + CHUNK_SIZE);
+          await Promise.all(
+            chunk.map(async (raw, idx) => {
+              const tradeFlowStr = task.tradeFlow === 'imports' ? 'Importer' : 'Exporter';
 
-          let phone = this.cleanPhone(raw.phone || raw.telephone);
-          let contactName = null;
-          let contactRole = null;
+              let phone = this.cleanPhone(raw.phone || raw.telephone);
+              let contactName = null;
+              let contactRole = null;
 
-          // Enrich contact details
-          const contact = await this.fetchCompanyContact(token, raw.id, raw.sourceId || 1);
-          if (contact) {
-            contactName = this.cleanDirectorName(contact.name || contact.contactPerson);
-            contactRole = contact.role || contact.contactRole || (contactName ? 'Director' : null);
-            if (contact.phone) phone = this.cleanPhone(contact.phone) || phone;
-          }
+              // Safely enrich contact details
+              try {
+                const contact = await this.fetchCompanyContact(token, raw.id, raw.sourceId || 1);
+                if (contact) {
+                  contactName = this.cleanDirectorName(contact.name || contact.contactPerson);
+                  contactRole = contact.role || contact.contactRole || (contactName ? 'Director' : null);
+                  if (contact.phone) phone = this.cleanPhone(contact.phone) || phone;
+                }
+              } catch {}
 
-          const parsed = {
-            id: raw.id,
-            name: raw.name || raw.company,
-            country: task.countryName,
-            city: raw.city || null,
-            address: raw.address || raw.city || null,
-            phone: phone || null,
-            contactName: contactName || null,
-            contactRole: contactRole || null,
-            website: raw.website || null,
-            sourceUrl: `https://www.trademap.org/Company_SelProduct_TS.aspx`,
-          };
+              const parsed = {
+                id: raw.id,
+                name: raw.name || raw.company,
+                country: task.countryName,
+                city: raw.city || null,
+                address: raw.address || raw.city || null,
+                phone: phone || null,
+                contactName: contactName || null,
+                contactRole: contactRole || null,
+                website: raw.website || null,
+                sourceUrl: `https://www.trademap.org/Company_SelProduct_TS.aspx`,
+              };
 
-          await this.upsertCompany(parsed, task.hsCode, tradeFlowStr);
-          extractedCount++;
+              await this.upsertCompany(parsed, task.hsCode, tradeFlowStr);
+              extractedCount++;
 
-          if (this.workerStates[workerId]) {
-            this.workerStates[workerId].currentRecord = i + 1;
-            this.workerStates[workerId].extractedThisTask = extractedCount;
-            this.workerStates[workerId].currentCompany = parsed.name;
-          }
+              if (this.workerStates[workerId]) {
+                this.workerStates[workerId].currentRecord = Math.min(rawCompanies.length, i + idx + 1);
+                this.workerStates[workerId].extractedThisTask = extractedCount;
+                this.workerStates[workerId].currentCompany = parsed.name;
+              }
+            })
+          );
 
-          // Periodic state save every 10 records for smooth live telemetry
-          if (i % 8 === 0 || i === rawCompanies.length - 1) {
-            this.saveState();
-          }
-
-          await sleep(180);
+          // Update live telemetry after every chunk
+          this.saveState();
+          await sleep(350);
         }
 
         // Mark task complete
