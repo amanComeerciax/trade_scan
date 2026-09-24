@@ -113,69 +113,107 @@ async function loginAndLaunchAccount(acc) {
 
     const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
 
-    console.log(`🌐 [Browser #${acc.idx}] Opening TradeMap for session check...`);
-    await page.goto('https://www.trademap.org', {
+    // 1. Open STS Login Page directly
+    console.log(`🔐 [Browser #${acc.idx}] Opening STS Login Page (https://sts.marketanalysis.intracen.org/en/Account/Login)...`);
+    await page.goto('https://sts.marketanalysis.intracen.org/en/Account/Login', {
       waitUntil: 'domcontentloaded',
       timeout: 60000,
     }).catch(() => {});
     await page.waitForTimeout(2000);
 
-    // Dismiss survey modal if present
-    try {
-      const declineBtn = await page.$('button:has-text("Decline"), button:has-text("Accept"), button.btn-close, [aria-label="Close"]');
-      if (declineBtn) await declineBtn.click().catch(() => {});
-    } catch {}
-
-    // Check if "Sign in or register" button is visible
-    const signInBtn = await page.$('a:has-text("Sign in"), button:has-text("Sign in")');
-    if (signInBtn) {
-      console.log(`🔐 [Browser #${acc.idx}] Triggering TradeMap OAuth Sign In...`);
-      await Promise.all([
-        page.waitForNavigation({ timeout: 25000 }).catch(() => {}),
-        signInBtn.click(),
-      ]);
-      await page.waitForTimeout(2000);
-
-      // Fill STS credentials on STS page
-      const emailField = await page.$('#Email, input[name="Email"]');
-      if (emailField) {
-        console.log(`✍️ [Browser #${acc.idx}] Auto-filling credentials for ${acc.user}...`);
-        await emailField.fill(acc.user);
-        const passField = await page.$('#Password, input[name="Password"]');
-        if (passField) await passField.fill(acc.pass);
-
-        console.log(`🔑 [Browser #${acc.idx}] Submitting Login...`);
-        const submitBtn = await page.$('button[type="submit"], button[name="button"][value="login"]');
-        if (submitBtn) {
-          await Promise.all([
-            page.waitForNavigation({ timeout: 30000 }).catch(() => {}),
-            submitBtn.click(),
-          ]);
-        }
-        await page.waitForTimeout(3000);
-        console.log(`✅ [Browser #${acc.idx}] Logged in via TradeMap OAuth successfully!`);
+    // 2. Fill Account Credentials & Check "Remember my login information"
+    const emailField = await page.$('#Email, input[name="Email"]');
+    if (emailField) {
+      console.log(`✍️ [Browser #${acc.idx}] Typing E-mail: ${acc.user}...`);
+      await emailField.fill(acc.user);
+      const passField = await page.$('#Password, input[name="Password"]');
+      if (passField) {
+        console.log(`✍️ [Browser #${acc.idx}] Typing Password...`);
+        await passField.fill(acc.pass);
       }
-    } else {
-      console.log(`ℹ️ [Browser #${acc.idx}] Already logged in!`);
+
+      const rememberCheckbox = await page.$('#RememberLogin, input[name="RememberLogin"], input[type="checkbox"]');
+      if (rememberCheckbox) {
+        console.log(`☑️ [Browser #${acc.idx}] Checking "Remember my login information"...`);
+        await rememberCheckbox.check().catch(() => rememberCheckbox.click().catch(() => {}));
+      }
+
+      console.log(`🔑 [Browser #${acc.idx}] Submitting Login...`);
+      const submitBtn = await page.$('button[type="submit"], button:has-text("Login"), button[name="button"][value="login"]');
+      if (submitBtn) {
+        await Promise.all([
+          page.waitForNavigation({ timeout: 30000 }).catch(() => {}),
+          submitBtn.click(),
+        ]);
+      }
+      await page.waitForTimeout(2500);
+      console.log(`✅ [Browser #${acc.idx}] STS Authentication complete!`);
     }
 
-    // Now navigate to the target HS code page
-    console.log(`🌐 [Browser #${acc.idx}] Redirecting to Target URL: ${targetUrl}`);
+    // 3. Navigate directly to the target HS Code page
+    console.log(`🌐 [Browser #${acc.idx}] Opening Target HS Page: ${targetUrl}`);
     await page.goto(targetUrl, {
       waitUntil: 'domcontentloaded',
       timeout: 60000,
     }).catch((err) => {
       console.warn(`⚠️ [Browser #${acc.idx}] Navigation warning: ${err.message}`);
     });
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(2500);
 
-    // Dismiss any survey modal on target page
+    // 4. Automatically dismiss any survey dialog ("Let us know what you think!")
     try {
       const declineBtn = await page.$('button:has-text("Decline"), button:has-text("Accept"), button.btn-close, [aria-label="Close"]');
       if (declineBtn) await declineBtn.click().catch(() => {});
     } catch {}
 
-    console.log(`🎉 [Browser #${acc.idx}] Ready & Open on HS ${hsCode} page!`);
+    // 5. Click "Sign in or register" in top bar to link TradeMap session
+    const signInBtn = await page.$('a:has-text("Sign in or register"), button:has-text("Sign in or register"), a:has-text("Sign in"), button:has-text("Sign in")');
+    if (signInBtn) {
+      console.log(`🔄 [Browser #${acc.idx}] Clicking "Sign in or register" to complete TradeMap session handshake...`);
+      await Promise.all([
+        page.waitForNavigation({ timeout: 30000 }).catch(() => {}),
+        signInBtn.click(),
+      ]);
+      await page.waitForTimeout(3000);
+
+      // If redirected to STS page, auto-fill and submit
+      const stsEmailField = await page.$('#Email, input[name="Email"]');
+      if (stsEmailField) {
+        await stsEmailField.fill(acc.user);
+        const stsPassField = await page.$('#Password, input[name="Password"]');
+        if (stsPassField) await stsPassField.fill(acc.pass);
+        const stsRemember = await page.$('#RememberLogin, input[name="RememberLogin"], input[type="checkbox"]');
+        if (stsRemember) await stsRemember.check().catch(() => {});
+        const stsSubmit = await page.$('button[type="submit"], button:has-text("Login")');
+        if (stsSubmit) {
+          await Promise.all([
+            page.waitForNavigation({ timeout: 30000 }).catch(() => {}),
+            stsSubmit.click(),
+          ]);
+        }
+        await page.waitForTimeout(3000);
+      }
+
+      // Ensure browser is on target HS Code page
+      if (!page.url().includes(`/p/${hsCode}`)) {
+        console.log(`🌐 [Browser #${acc.idx}] Navigating to Target HS Page: ${targetUrl}`);
+        await page.goto(targetUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 60000,
+        }).catch(() => {});
+        await page.waitForTimeout(2000);
+      }
+
+      // Dismiss survey dialog again if shown
+      try {
+        const declineBtn2 = await page.$('button:has-text("Decline"), button:has-text("Accept"), button.btn-close, [aria-label="Close"]');
+        if (declineBtn2) await declineBtn2.click().catch(() => {});
+      } catch {}
+
+      console.log(`🎉 [Browser #${acc.idx}] Fully logged in & open on HS ${hsCode}!`);
+    } else {
+      console.log(`🎉 [Browser #${acc.idx}] Already logged in & open on HS ${hsCode}!`);
+    }
   } catch (err) {
     console.error(`❌ [Browser #${acc.idx}] Launch error: ${err.message}`);
   }

@@ -209,13 +209,19 @@ export async function DELETE(request: Request) {
       // no JSON body
     }
 
-    // 1. Wipe all data
+    // 1. Wipe all data (sequential to avoid transaction timeout on large datasets)
     if (all === "true") {
-      const deleteProducts = prisma.companyProduct.deleteMany();
-      const deleteCompanies = prisma.company.deleteMany();
-      await prisma.$transaction([deleteProducts, deleteCompanies]);
+      // Delete children first, then parents — no transaction needed since order handles FK
+      const prodResult = await prisma.companyProduct.deleteMany();
+      const compResult = await prisma.company.deleteMany();
+      // Also clear scrape jobs and queue tasks
+      await prisma.scrapeJob.deleteMany().catch(() => {});
+      await prisma.scrapeQueueTask.deleteMany().catch(() => {});
       invalidateMetaCache();
-      return NextResponse.json({ success: true, message: "All company data cleared successfully." });
+      return NextResponse.json({
+        success: true,
+        message: `All data cleared: ${compResult.count} companies, ${prodResult.count} products deleted.`,
+      });
     }
 
     // 2. Single company delete

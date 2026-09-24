@@ -784,7 +784,7 @@ export default function Dashboard() {
         <div className="nav-section">
           <div className="nav-section-title">Engine Tools</div>
           <div
-            onClick={() => setIsScraperModalOpen(true)}
+            onClick={() => { window.location.href = '/batch'; }}
             className="nav-item"
             style={{
               cursor: "pointer",
@@ -929,7 +929,7 @@ export default function Dashboard() {
 
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <button
-              onClick={() => setIsScraperModalOpen(true)}
+              onClick={() => { window.location.href = '/batch'; }}
               style={{
                 display: "inline-flex",
                 alignItems: "center",

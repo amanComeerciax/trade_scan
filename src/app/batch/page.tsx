@@ -61,14 +61,27 @@ export default function BatchDashboard() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Form controls
-  const [targetHsCode, setTargetHsCode] = useState('020130');
+  // Form controls (dynamically synced from URL or active state)
+  const [targetHsCode, setTargetHsCode] = useState('');
   const [targetCountry, setTargetCountry] = useState('000');
   const [targetFlow, setTargetFlow] = useState('exports');
   const [browserLoading, setBrowserLoading] = useState(false);
   const [browserLaunchMsg, setBrowserLaunchMsg] = useState<string | null>(null);
 
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const terminalContainerRef = useRef<HTMLDivElement>(null);
+
+  // Read URL query params on initial load
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlHs = params.get('hs');
+      const urlCountry = params.get('country');
+      const urlFlow = params.get('flow');
+      if (urlHs) setTargetHsCode(urlHs);
+      if (urlCountry) setTargetCountry(urlCountry);
+      if (urlFlow) setTargetFlow(urlFlow);
+    }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -80,6 +93,13 @@ export default function BatchDashboard() {
           if (isMounted) {
             setState(data);
             setLoading(false);
+            // If actively running and no custom input yet, sync to the running HS code
+            if (data.active && data.active.length > 0) {
+              const activeHs = data.active.find((w: any) => w.hsCode)?.hsCode;
+              if (activeHs) {
+                setTargetHsCode((prev) => prev || activeHs);
+              }
+            }
           }
         }
       } catch {}
@@ -94,8 +114,8 @@ export default function BatchDashboard() {
   }, []);
 
   useEffect(() => {
-    if (logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (terminalContainerRef.current) {
+      terminalContainerRef.current.scrollTop = terminalContainerRef.current.scrollHeight;
     }
   }, [state?.logs]);
 
@@ -839,7 +859,9 @@ export default function BatchDashboard() {
           </div>
 
           {/* Terminal Logs Content */}
-          <div style={{
+          <div
+            ref={terminalContainerRef}
+            style={{
             padding: '18px',
             fontFamily: 'Consolas, "Fira Code", monospace',
             fontSize: '13px',
@@ -871,7 +893,6 @@ export default function BatchDashboard() {
                 [System Initialized] Standing by for browser launch or extraction trigger...
               </div>
             )}
-            <div ref={logsEndRef} />
           </div>
         </div>
       </div>
