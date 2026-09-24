@@ -145,7 +145,10 @@ while (process.env[`TRADEMAP_ACCOUNT_${accIdx}_USER`]) {
 // ============================================================
 const STATE_FILE = path.join(__dirname, '.batch_state.json');
 const DIST_STATE_FILE = path.join(__dirname, '.distributed_state.json');
-const CHECKPOINT_FILE = path.join(process.env.LOCALAPPDATA || '', 'TradeScan-checkpoint-020130-world.json');
+const CHECKPOINT_FILE = path.join(
+  process.env.LOCALAPPDATA || '',
+  `TradeScan-checkpoint-${HS_CODE}-${COUNTRY_CODE}-${TRADE_FLOW}.json`
+);
 
 let isRunning = true;
 let shouldStop = false;
@@ -155,26 +158,20 @@ const claimedPages = new Set();
 let totalExtracted = 0;
 const logs = [];
 
-// Resume from checkpoint
-let nextClaimPage = 29; // Pages 1-28 already done (2840 records)
+// Resume from checkpoint if it exists for this specific HS code
+let nextClaimPage = 1;
 try {
   if (fs.existsSync(CHECKPOINT_FILE)) {
     const cp = JSON.parse(fs.readFileSync(CHECKPOINT_FILE, 'utf8'));
-    if (Array.isArray(cp.completedPages)) {
+    if (Array.isArray(cp.completedPages) && cp.completedPages.length > 0) {
       cp.completedPages.forEach((p) => {
         completedPages.add(p);
         claimedPages.add(p);
       });
-      nextClaimPage = Math.max(nextClaimPage, ...Array.from(completedPages)) + 1;
+      nextClaimPage = Math.max(1, ...Array.from(completedPages)) + 1;
     }
   }
 } catch {}
-
-// Pages 1-28 already in DB
-for (let p = 1; p <= 28; p++) {
-  completedPages.add(p);
-  claimedPages.add(p);
-}
 
 const workerStates = {};
 ALL_WORKERS.forEach((w) => {
@@ -839,15 +836,10 @@ async function runWorkerInner(worker) {
 // MAIN
 // ============================================================
 async function main() {
-  appendLog(`🚀 Starting 4-Browser Chrome Turbo Engine for HS ${HS_CODE} World Exports...`);
+  appendLog(`🚀 Starting ${ALL_WORKERS.length}-Browser Chrome Turbo Engine for HS ${HS_CODE} (${TRADE_FLOW})...`);
   appendLog(`   Architecture: 310210 Proven (1-by-1 Contact Pacing, ISO Country Map, Atomic Pages)`);
 
-  // Clear stale Chrome processes and profile locks
-  try {
-    execSync('taskkill /F /IM chrome.exe /T 2>nul', { stdio: 'ignore' });
-  } catch {}
-  await sleep(2000);
-
+  // Clear stale profile locks
   for (const w of ALL_WORKERS) {
     const profileDir = path.join(process.cwd(), 'scripts', `profile_account_${w.id}`);
     for (const lockName of ['SingletonLock', 'lockfile']) {
