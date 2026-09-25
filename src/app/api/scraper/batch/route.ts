@@ -32,6 +32,19 @@ export async function GET() {
     if (!state.workerCount || state.workerCount === 0) {
       state.workerCount = accountCount;
     }
+    if (!state.isRunning) {
+      state.speedRecordsPerMin = 0;
+      state.elapsedSeconds = 0;
+      state.etaSeconds = 0;
+      state.progressPercent = 0;
+      if (Array.isArray(state.active)) {
+        state.active = state.active.map((w: any) => ({
+          ...w,
+          status: 'IDLE',
+          currentCompany: 'Standby / Idle',
+        }));
+      }
+    }
     return NextResponse.json(state);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -103,11 +116,15 @@ export async function POST(request: Request) {
             current.shouldStop = true;
             current.isRunning = false;
             current.status = 'STOPPED';
+            current.speedRecordsPerMin = 0;
+            current.elapsedSeconds = 0;
+            current.etaSeconds = 0;
+            current.progressPercent = 0;
             if (Array.isArray(current.active)) {
               current.active = current.active.map((w: any) => ({
                 ...w,
-                status: 'STOPPED',
-                currentCompany: 'Stopped by user',
+                status: 'IDLE',
+                currentCompany: 'Standby / Idle',
               }));
             }
             fs.writeFileSync(fPath, JSON.stringify(current, null, 2));

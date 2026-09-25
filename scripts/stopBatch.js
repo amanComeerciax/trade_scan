@@ -15,11 +15,15 @@ function stopAll() {
         cur.shouldStop = true;
         cur.isRunning = false;
         cur.status = 'STOPPED';
+        cur.speedRecordsPerMin = 0;
+        cur.elapsedSeconds = 0;
+        cur.etaSeconds = 0;
+        cur.progressPercent = 0;
         if (Array.isArray(cur.active)) {
           cur.active = cur.active.map((w) => ({
             ...w,
-            status: 'STOPPED',
-            currentCompany: 'Stopped by user',
+            status: 'IDLE',
+            currentCompany: 'Standby / Idle',
           }));
         }
         cur.logs = [

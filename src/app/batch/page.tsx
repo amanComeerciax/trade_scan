@@ -99,7 +99,7 @@ export default function BatchDashboard() {
             setState(data);
             setLoading(false);
             // If actively running and no custom input yet, sync to the running HS code
-            if (data.active && data.active.length > 0) {
+            if (data.isRunning && data.active && data.active.length > 0) {
               const activeHs = data.active.find((w: any) => w.hsCode)?.hsCode;
               if (activeHs) {
                 setTargetHsCode((prev) => prev || activeHs);
@@ -147,6 +147,11 @@ export default function BatchDashboard() {
   };
 
   const handleStartExtraction = async () => {
+    const trimmedHs = targetHsCode.trim();
+    if (!trimmedHs) {
+      alert('Please enter or select a Product / HS Code first.');
+      return;
+    }
     setActionLoading(true);
     try {
       await fetch('/api/scraper/batch', {
@@ -154,7 +159,7 @@ export default function BatchDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'start_extraction',
-          hsCode: targetHsCode || '020130',
+          hsCode: trimmedHs,
           countryCode: targetCountry || '000',
           tradeFlow: targetFlow || 'exports',
         }),
@@ -192,7 +197,9 @@ export default function BatchDashboard() {
     return m > 0 ? `${m}m ${s}s` : `${s}s`;
   };
 
-  const targetUrlPreview = `https://www.trademap.org/en/goods/companies/c/${targetCountry}/${targetFlow}/p/${targetHsCode || '020130'}`;
+  const targetUrlPreview = targetHsCode.trim()
+    ? `https://www.trademap.org/en/goods/companies/c/${targetCountry}/${targetFlow}/p/${targetHsCode.trim()}`
+    : `https://www.trademap.org/en/goods/companies/c/${targetCountry}/${targetFlow}/p/`;
 
   return (
     <div style={{
@@ -474,7 +481,7 @@ export default function BatchDashboard() {
               }}
               title={targetUrlPreview}
             >
-              trademap.org/c/{targetCountry}/{targetFlow}/p/{targetHsCode || '...'}
+              trademap.org/c/{targetCountry}/{targetFlow}/p/{targetHsCode.trim() || '—'}
             </div>
           </div>
         </div>
@@ -582,7 +589,7 @@ export default function BatchDashboard() {
             Total Verified Ingested
           </div>
           <div style={{ fontSize: '36px', fontWeight: '900', color: '#38bdf8', marginTop: '6px', letterSpacing: '-1px' }}>
-            {state?.totalExtracted ? state.totalExtracted.toLocaleString() : '0'}
+            {state?.isRunning && state?.totalExtracted ? state.totalExtracted.toLocaleString() : '0'}
           </div>
           <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
             Saved directly in MongoDB Atlas
@@ -604,7 +611,7 @@ export default function BatchDashboard() {
             Live Stream Velocity
           </div>
           <div style={{ fontSize: '36px', fontWeight: '900', color: '#10b981', marginTop: '6px', letterSpacing: '-1px' }}>
-            {state?.speedRecordsPerMin || 0}
+            {state?.isRunning ? (state?.speedRecordsPerMin || 0) : 0}
             <span style={{ fontSize: '15px', color: '#94a3b8', fontWeight: '500', marginLeft: '6px' }}>rec/min</span>
           </div>
           <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
@@ -627,9 +634,9 @@ export default function BatchDashboard() {
             Elapsed / Estimated ETA
           </div>
           <div style={{ fontSize: '28px', fontWeight: '900', color: '#fbbf24', marginTop: '10px' }}>
-            {formatTime(state?.elapsedSeconds || 0)}
+            {state?.isRunning ? formatTime(state?.elapsedSeconds || 0) : '0s'}
             <span style={{ fontSize: '16px', color: '#64748b', fontWeight: '400', margin: '0 8px' }}>/</span>
-            <span style={{ fontSize: '20px', color: '#94a3b8' }}>~{formatTime(state?.etaSeconds || 0)}</span>
+            <span style={{ fontSize: '20px', color: '#94a3b8' }}>~{state?.isRunning ? formatTime(state?.etaSeconds || 0) : '0s'}</span>
           </div>
           <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
             Real-time pacing calculation
@@ -651,11 +658,11 @@ export default function BatchDashboard() {
             Batch Completion
           </div>
           <div style={{ fontSize: '36px', fontWeight: '900', color: '#c084fc', marginTop: '6px', letterSpacing: '-1px' }}>
-            {state?.progressPercent || 0}%
+            {state?.isRunning ? (state?.progressPercent || 0) : 0}%
           </div>
           <div style={{ width: '100%', height: '8px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px', marginTop: '12px', overflow: 'hidden' }}>
             <div style={{
-              width: `${state?.progressPercent || 0}%`,
+              width: `${state?.isRunning ? (state?.progressPercent || 0) : 0}%`,
               height: '100%',
               background: 'linear-gradient(90deg, #8b5cf6 0%, #ec4899 100%)',
               transition: 'width 0.4s ease',
@@ -684,11 +691,12 @@ export default function BatchDashboard() {
             const wId = idx + 1;
             const w = state?.active?.find((item) => item.workerId === wId);
 
-            const isFetching = w?.status === 'FETCHING';
-            const isReady = w?.status === 'READY';
-            const isDone = w?.status === 'TASK_DONE';
-            const isCooldown = w?.status === 'COOLDOWN' || w?.currentCompany?.includes('Cooldown');
-            const isIdle = !w || w.status === 'IDLE';
+            const isRunning = !!state?.isRunning;
+            const isFetching = isRunning && w?.status === 'FETCHING';
+            const isReady = isRunning && w?.status === 'READY';
+            const isDone = isRunning && w?.status === 'TASK_DONE';
+            const isCooldown = isRunning && (w?.status === 'COOLDOWN' || w?.currentCompany?.includes('Cooldown'));
+            const isIdle = !isRunning || !w || w.status === 'IDLE' || w.status === 'STOPPED';
 
             let badgeColor = '#94a3b8';
             let badgeBg = 'rgba(148, 163, 184, 0.15)';
@@ -744,7 +752,7 @@ export default function BatchDashboard() {
                     background: badgeBg,
                     border: `1px solid ${borderColor}`,
                   }}>
-                    {w?.status || 'IDLE'}
+                    {isRunning ? (w?.status || 'IDLE') : 'IDLE'}
                   </span>
                 </div>
 
@@ -755,14 +763,14 @@ export default function BatchDashboard() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px', color: '#cbd5e1' }}>
                   <span style={{ color: '#64748b' }}>Claimed Page:</span>
                   <span style={{ fontWeight: '700', color: '#38bdf8' }}>
-                    {w?.page ? `Page ${w.page} / ${state?.totalTasks || w?.totalPages || 111}` : 'Standby'}
+                    {isRunning && w?.page ? `Page ${w.page} / ${state?.totalTasks || w?.totalPages || 111}` : 'Standby'}
                   </span>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '12px', color: '#cbd5e1' }}>
                   <span style={{ color: '#64748b' }}>Records on Page:</span>
                   <span style={{ fontWeight: '700', color: '#10b981' }}>
-                    {w?.currentRecord || 0} / {w?.totalOnPage || 100}
+                    {isRunning ? (w?.currentRecord || 0) : 0} / {isRunning ? (w?.totalOnPage || 100) : 100}
                   </span>
                 </div>
 
@@ -788,9 +796,9 @@ export default function BatchDashboard() {
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                     }}
-                    title={w?.currentCompany || 'Idle / Waiting for claim'}
+                    title={isRunning ? (w?.currentCompany || 'Idle / Waiting for claim') : 'Standby'}
                   >
-                    {w?.currentCompany || 'Waiting for page claim...'}
+                    {isRunning ? (w?.currentCompany || 'Waiting for page claim...') : 'Standby / Idle'}
                   </div>
                 </div>
               </div>

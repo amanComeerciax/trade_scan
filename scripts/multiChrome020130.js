@@ -201,11 +201,11 @@ function appendLog(msg) {
 }
 
 function saveState() {
-  const elapsed = Math.max(1, Math.floor((Date.now() - startTime) / 1000));
-  const speed = Math.round((totalExtracted / elapsed) * 60);
+  const elapsed = isRunning ? Math.max(1, Math.floor((Date.now() - startTime) / 1000)) : 0;
+  const speed = isRunning ? Math.round((totalExtracted / elapsed) * 60) : 0;
   const remaining = Math.max(0, 17893 - totalExtracted);
-  const eta = speed > 0 ? Math.round((remaining / speed) * 60) : 0;
-  const progress = Math.min(100, Math.round((completedPages.size / TOTAL_PAGES) * 100));
+  const eta = (isRunning && speed > 0) ? Math.round((remaining / speed) * 60) : 0;
+  const progress = isRunning ? Math.min(100, Math.round((completedPages.size / TOTAL_PAGES) * 100)) : 0;
 
   const state = {
     isRunning,
