@@ -486,31 +486,7 @@ export default function BatchDashboard() {
           borderTop: '1px solid rgba(255, 255, 255, 0.08)',
           paddingTop: '20px',
         }}>
-          {/* Button 1: Launch 8 Browsers */}
-          <button
-            onClick={handleLaunchBrowsers}
-            disabled={browserLoading}
-            style={{
-              padding: '14px 26px',
-              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%)',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: '12px',
-              fontWeight: '700',
-              fontSize: '14px',
-              cursor: browserLoading ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              boxShadow: '0 4px 20px rgba(37, 99, 235, 0.45)',
-              transition: 'all 0.2s ease',
-              opacity: browserLoading ? 0.7 : 1,
-            }}
-          >
-            {browserLoading ? `⏳ Launching ${activeCount} Chrome Windows...` : `🚀 OPEN ${activeCount} BROWSERS (AUTO LOGIN)`}
-          </button>
-
-          {/* Button 2: Start Full Extraction */}
+          {/* Primary Action Button */}
           {!state?.isRunning ? (
             <button
               onClick={handleStartExtraction}
