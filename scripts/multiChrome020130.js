@@ -200,13 +200,15 @@ function appendLog(msg) {
   saveState();
 }
 
+let initialDbCount = 0;
 let sessionExtracted = 0;
 
 function saveState() {
   const elapsed = isRunning ? Math.max(1, Math.floor((Date.now() - startTime) / 1000)) : 0;
   // Speed is calculated strictly on new records extracted during this live run
   const speed = (isRunning && elapsed > 0) ? Math.round((sessionExtracted / elapsed) * 60) : 0;
-  const remaining = Math.max(0, (TOTAL_PAGES * PAGE_SIZE) - sessionExtracted);
+  const currentTotal = initialDbCount + sessionExtracted;
+  const remaining = Math.max(0, (TOTAL_PAGES * PAGE_SIZE) - currentTotal);
   const eta = (isRunning && speed > 0) ? Math.round((remaining / speed) * 60) : 0;
   const progress = isRunning ? Math.min(100, Math.round((completedPages.size / TOTAL_PAGES) * 100)) : 0;
 
@@ -224,7 +226,9 @@ function saveState() {
     totalTasks: TOTAL_PAGES,
     completedTasks: completedPages.size,
     pendingCount: TOTAL_PAGES - completedPages.size,
-    totalExtracted: sessionExtracted,
+    totalExtracted: currentTotal,
+    sessionExtracted,
+    initialDbCount,
     workerCount: ALL_WORKERS.length,
     active: Object.values(workerStates),
     logs,
@@ -866,7 +870,7 @@ function getChromeExecutable() {
 
       pageInserted++;
       sessionExtracted++;
-      totalExtracted = sessionExtracted;
+      totalExtracted = initialDbCount + sessionExtracted;
 
       workerStates[wId].currentRecord = pageInserted;
       workerStates[wId].totalExtracted += 1;
@@ -885,7 +889,7 @@ function getChromeExecutable() {
     appendLog(
       `✅ Worker #${wId}: Completed Page ${pageNum} (+${pageInserted} records, ` +
       `📞 ${pagePhonesFound} phones, 👔 ${pageDirectorsFound} directors | ` +
-      `Session Extracted: ${sessionExtracted})`
+      `Total HS ${HS_CODE}: ${initialDbCount + sessionExtracted})`
     );
     saveState();
     await sleep(PAGE_DELAY_MS);
@@ -912,11 +916,21 @@ async function main() {
     }
   }
 
-  // Count existing records in DB for this HS Code
-  const existing = await prisma.companyProduct.count({ where: { hsCode: HS_CODE } }).catch(() => 0);
-  totalExtracted = 0;
+  // Count existing records in DB specifically for this HS Code and Trade Flow
+  const role = TRADE_FLOW === 'imports' ? 'Importer' : 'Exporter';
+  try {
+    initialDbCount = await prisma.companyProduct.count({
+      where: {
+        hsCode: HS_CODE,
+        tradeType: { in: [role, 'Both'] },
+      },
+    });
+  } catch {
+    initialDbCount = 0;
+  }
   sessionExtracted = 0;
-  appendLog(`📦 Found ${existing} existing records in MongoDB Atlas for HS ${HS_CODE}.`);
+  totalExtracted = initialDbCount;
+  appendLog(`📦 Found ${initialDbCount} existing records in MongoDB Atlas for HS ${HS_CODE} (${TRADE_FLOW}).`);
   appendLog(`📍 Resuming from Page ${nextClaimPage} (Pages 1-${nextClaimPage - 1} already done).`);
 
   saveState();

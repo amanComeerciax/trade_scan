@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
 import { spawn, execSync } from 'child_process';
+import { prisma } from '@/lib/prisma';
 
 const stateFilePath = path.join(process.cwd(), 'scripts', '.batch_state.json');
 
@@ -182,6 +183,17 @@ export async function POST(request: Request) {
         (k) => k.startsWith('TRADEMAP_ACCOUNT_') && k.endsWith('_USER')
       ).length || 8;
 
+      const role = tradeFlow === 'imports' ? 'Importer' : 'Exporter';
+      let existingCount = 0;
+      try {
+        existingCount = await prisma.companyProduct.count({
+          where: {
+            hsCode,
+            tradeType: { in: [role, 'Both'] },
+          },
+        });
+      } catch {}
+
       const initialState = {
         isRunning: true,
         shouldStop: false,
@@ -192,7 +204,7 @@ export async function POST(request: Request) {
         workerCount: accountCount,
         totalTasks: 200,
         completedTasks: 0,
-        totalExtracted: 0,
+        totalExtracted: existingCount,
         progressPercent: 0,
         speedRecordsPerMin: 0,
         elapsedSeconds: 0,
