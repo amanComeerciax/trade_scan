@@ -460,12 +460,27 @@ async function runWorkerInner(worker) {
   await sleep((wId - 1) * 2000);
 
   let context = null;
+function getChromeExecutable() {
+  const possible = [
+    process.env.CHROME_BIN,
+    process.env.CHROME_PATH,
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Users\\divy\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+  ];
+  for (const p of possible) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const proxy = getProxyConfig(wId);
+      const chromeExec = getChromeExecutable();
       const launchOpts = {
         headless: false,
-        channel: 'chrome',
         viewport: null,
         args: [
           '--no-sandbox',
@@ -475,6 +490,9 @@ async function runWorkerInner(worker) {
           '--no-default-browser-check',
         ],
       };
+      if (chromeExec) {
+        launchOpts.executablePath = chromeExec;
+      }
       if (proxy) {
         launchOpts.proxy = {
           server: proxy.server,

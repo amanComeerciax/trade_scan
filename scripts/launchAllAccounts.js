@@ -108,9 +108,23 @@ async function loginAndLaunchAccount(acc) {
 
   try {
     const proxy = getProxyConfig(acc.idx);
+    function getChromeExecutable() {
+      const possible = [
+        process.env.CHROME_BIN,
+        process.env.CHROME_PATH,
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Users\\divy\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+      ];
+      for (const p of possible) {
+        if (p && fs.existsSync(p)) return p;
+      }
+      return null;
+    }
+    const chromeExec = getChromeExecutable();
     const launchOpts = {
       headless: false,
-      channel: 'chrome',
       viewport: null,
       args: [
         '--disable-blink-features=AutomationControlled',
@@ -123,6 +137,9 @@ async function loginAndLaunchAccount(acc) {
         '--hide-crash-restore-bubble',
       ],
     };
+    if (chromeExec) {
+      launchOpts.executablePath = chromeExec;
+    }
     if (proxy) {
       launchOpts.proxy = {
         server: proxy.server,
