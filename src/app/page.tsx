@@ -75,7 +75,7 @@ interface StatsData {
   hsList?: { hsCode: string; count: number }[];
 }
 
-export function getHsCommodityInfo(hsCode?: string | null) {
+function getHsCommodityInfo(hsCode?: string | null) {
   if (!hsCode) {
     return { icon: "🌐", name: "All Commodities", category: "Global Trade Directory" };
   }

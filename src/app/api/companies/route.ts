@@ -74,7 +74,7 @@ async function getCachedHsList(): Promise<Array<{ hsCode: string; productCategor
   }
 }
 
-export function invalidateMetaCache() {
+function invalidateMetaCache() {
   metaCache.countries = null;
   metaCache.countriesExp = 0;
   metaCache.hsList = null;
