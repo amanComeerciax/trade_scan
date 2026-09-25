@@ -213,7 +213,7 @@ function saveState() {
   const state = {
     isRunning,
     shouldStop,
-    batchId: 'batch_020130_4chrome',
+    batchId: `batch_${HS_CODE}_parallel`,
     hsCode: HS_CODE,
     countryCode: COUNTRY_CODE,
     tradeFlow: TRADE_FLOW,
@@ -758,7 +758,7 @@ function getChromeExecutable() {
     workerStates[wId].status = 'ENRICHING';
     saveState();
 
-    appendLog(`📊 Worker #${wId}: Got ${records.length} records on Page ${pageNum}. Enriching contacts (310210 Architecture)...`);
+    appendLog(`📊 Worker #${wId}: Got ${records.length} records on Page ${pageNum}. Enriching verified contacts...`);
 
     let pageInserted = 0;
     let pagePhonesFound = 0;
@@ -901,7 +901,7 @@ function getChromeExecutable() {
 // ============================================================
 async function main() {
   appendLog(`🚀 Starting ${ALL_WORKERS.length}-Browser Chrome Turbo Engine for HS ${HS_CODE} (${TRADE_FLOW})...`);
-  appendLog(`   Architecture: 310210 Proven (1-by-1 Contact Pacing, ISO Country Map, Atomic Pages)`);
+  appendLog(`   Architecture: High-Speed Parallel Pipeline (1-by-1 Contact Pacing, ISO Country Map, Atomic Pages)`);
 
   // Clear stale profile locks
   for (const w of ALL_WORKERS) {
