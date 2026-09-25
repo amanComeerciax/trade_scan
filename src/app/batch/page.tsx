@@ -31,6 +31,7 @@ interface BatchState {
   pendingCount: number;
   totalExtracted: number;
   workerCount: number;
+  configuredAccountCount?: number;
   active: WorkerState[];
   logs: string[];
   updatedAt: string;
@@ -69,6 +70,8 @@ export default function BatchDashboard() {
   const [browserLaunchMsg, setBrowserLaunchMsg] = useState<string | null>(null);
 
   const terminalContainerRef = useRef<HTMLDivElement>(null);
+
+  const activeCount = state?.configuredAccountCount || state?.workerCount || 8;
 
   // Read URL query params on initial load
   useEffect(() => {
@@ -134,7 +137,7 @@ export default function BatchDashboard() {
         }),
       });
       const data = await res.json();
-      setBrowserLaunchMsg(data.message || '🚀 8 Chrome Browsers Launched & Logged In Successfully!');
+      setBrowserLaunchMsg(data.message || `🚀 ${activeCount} Chrome Browsers Launched & Logged In Successfully!`);
     } catch (err: any) {
       setBrowserLaunchMsg(`❌ Launch error: ${err.message}`);
     }
@@ -320,11 +323,11 @@ export default function BatchDashboard() {
                 borderRadius: '6px',
                 border: '1px solid rgba(59, 130, 246, 0.3)',
               }}>
-                8 ACCOUNTS ACTIVE
+                {activeCount} ACCOUNTS ACTIVE
               </span>
             </div>
             <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
-              Select or type any HS Code. All 8 Chrome windows will automatically authenticate via STS and redirect directly to this product page.
+              Select or type any HS Code. All {activeCount} Chrome windows will automatically authenticate via STS and redirect directly to this product page.
             </p>
           </div>
 
@@ -504,7 +507,7 @@ export default function BatchDashboard() {
               opacity: browserLoading ? 0.7 : 1,
             }}
           >
-            {browserLoading ? '⏳ Launching 8 Chrome Windows...' : '🚀 OPEN 8 BROWSERS (AUTO LOGIN)'}
+            {browserLoading ? `⏳ Launching ${activeCount} Chrome Windows...` : `🚀 OPEN ${activeCount} BROWSERS (AUTO LOGIN)`}
           </button>
 
           {/* Button 2: Start Full Extraction */}
@@ -528,7 +531,7 @@ export default function BatchDashboard() {
                 transition: 'all 0.2s ease',
               }}
             >
-              {actionLoading ? '⏳ Initializing Stream...' : `⚡ START 8-WORKER EXTRACTION`}
+              {actionLoading ? '⏳ Initializing Stream...' : `⚡ START ${activeCount}-WORKER EXTRACTION`}
             </button>
           ) : (
             <button

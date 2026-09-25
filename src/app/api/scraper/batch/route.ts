@@ -7,10 +7,16 @@ const stateFilePath = path.join(process.cwd(), 'scripts', '.batch_state.json');
 
 export async function GET() {
   try {
+    const configuredAccounts = Object.keys(process.env).filter(
+      (k) => k.startsWith('TRADEMAP_ACCOUNT_') && k.endsWith('_USER')
+    ).length;
+    const accountCount = configuredAccounts > 0 ? configuredAccounts : 8;
+
     if (!fs.existsSync(stateFilePath)) {
       return NextResponse.json({
         isRunning: false,
-        workerCount: 0,
+        workerCount: accountCount,
+        configuredAccountCount: accountCount,
         pendingCount: 0,
         pendingQueue: [],
         completed: [],
@@ -22,6 +28,10 @@ export async function GET() {
 
     const raw = fs.readFileSync(stateFilePath, 'utf8');
     const state = JSON.parse(raw);
+    state.configuredAccountCount = accountCount;
+    if (!state.workerCount || state.workerCount === 0) {
+      state.workerCount = accountCount;
+    }
     return NextResponse.json(state);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
