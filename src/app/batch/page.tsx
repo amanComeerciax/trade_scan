@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { ALL_COUNTRIES } from '@/lib/countries';
 
 interface WorkerState {
   workerId: number;
@@ -46,16 +47,17 @@ const PRESET_HS_CODES = [
   { code: '7113', label: '💍 Jewellery (7113)' },
 ];
 
-const PRESET_COUNTRIES = [
-  { code: '000', name: 'World (All Markets)' },
-  { code: '699', name: 'India (699)' },
-  { code: '842', name: 'United States (842)' },
-  { code: '156', name: 'China (156)' },
-  { code: '276', name: 'Germany (276)' },
-  { code: '784', name: 'United Arab Emirates (784)' },
-  { code: '826', name: 'United Kingdom (826)' },
-  { code: '704', name: 'Vietnam (704)' },
-];
+const uniqueCountries = new Map<string, { code: string; name: string }>();
+uniqueCountries.set('000', { code: '000', name: '🌍 World (All Markets)' });
+ALL_COUNTRIES.forEach((c) => {
+  if (c.code !== '000' && !uniqueCountries.has(c.code)) {
+    uniqueCountries.set(c.code, {
+      code: c.code,
+      name: `${c.flag ? c.flag + ' ' : ''}${c.name} (${c.code})`,
+    });
+  }
+});
+const PRESET_COUNTRIES = Array.from(uniqueCountries.values());
 
 export default function BatchDashboard() {
   const [state, setState] = useState<BatchState | null>(null);
