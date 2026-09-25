@@ -152,6 +152,7 @@ export async function POST(request: Request) {
           detached: true,
           stdio: ['ignore', logOut, logOut],
           cwd: process.cwd(),
+          env: process.env,
         }
       );
 
@@ -210,6 +211,7 @@ export async function POST(request: Request) {
           detached: true,
           stdio: 'ignore',
           cwd: process.cwd(),
+          env: process.env,
         }
       );
       if (child.pid) {

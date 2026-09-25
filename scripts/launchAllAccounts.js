@@ -39,9 +39,29 @@ console.log(`📋 Found ${accounts.length} Accounts in .env. Initializing stagge
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
+const { ProxyAgent } = require('undici');
+
+function getProxyConfig(wId) {
+  const host = process.env[`PROXY_${wId}_HOST`] || process.env.PROXY_HOST;
+  const port = process.env[`PROXY_${wId}_PORT`] || process.env.PROXY_PORT;
+  const user = process.env[`PROXY_${wId}_USER`] || process.env.PROXY_USER;
+  const pass = process.env[`PROXY_${wId}_PASSWORD`] || process.env.PROXY_PASSWORD;
+  if (host && port) {
+    const auth = user ? `${encodeURIComponent(user)}:${encodeURIComponent(pass || '')}@` : '';
+    return {
+      server: `http://${host}:${port}`,
+      username: user || undefined,
+      password: pass || undefined,
+      dispatcher: new ProxyAgent(`http://${auth}${host}:${port}`),
+    };
+  }
+  return null;
+}
+
 async function getStsToken(acc) {
   try {
-    const res = await fetch('https://sts.marketanalysis.intracen.org/connect/token', {
+    const proxy = getProxyConfig(acc.idx);
+    const fetchOptions = {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -51,7 +71,11 @@ async function getStsToken(acc) {
         password: acc.pass,
         scope: 'openid profile offline_access TradeMap.API Account.API',
       }).toString(),
-    });
+    };
+    if (proxy?.dispatcher) {
+      fetchOptions.dispatcher = proxy.dispatcher;
+    }
+    const res = await fetch('https://sts.marketanalysis.intracen.org/connect/token', fetchOptions);
     const data = await res.json();
     return data.access_token || null;
   } catch {
@@ -83,7 +107,8 @@ async function loginAndLaunchAccount(acc) {
   const token = await getStsToken(acc);
 
   try {
-    const context = await chromium.launchPersistentContext(userDataDir, {
+    const proxy = getProxyConfig(acc.idx);
+    const launchOpts = {
       headless: false,
       channel: 'chrome',
       viewport: null,
@@ -97,7 +122,15 @@ async function loginAndLaunchAccount(acc) {
         '--disable-extensions',
         '--hide-crash-restore-bubble',
       ],
-    });
+    };
+    if (proxy) {
+      launchOpts.proxy = {
+        server: proxy.server,
+        username: proxy.username,
+        password: proxy.password,
+      };
+    }
+    const context = await chromium.launchPersistentContext(userDataDir, launchOpts);
 
     if (token) {
       await context.addInitScript((tok) => {

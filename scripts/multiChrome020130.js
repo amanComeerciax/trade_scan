@@ -244,11 +244,31 @@ function saveState() {
 }
 
 // ============================================================
-// STS TOKEN ACQUISITION
+// STS TOKEN ACQUISITION (with Proxy Support)
 // ============================================================
+const { ProxyAgent } = require('undici');
+
+function getProxyConfig(wId) {
+  const host = process.env[`PROXY_${wId}_HOST`] || process.env.PROXY_HOST;
+  const port = process.env[`PROXY_${wId}_PORT`] || process.env.PROXY_PORT;
+  const user = process.env[`PROXY_${wId}_USER`] || process.env.PROXY_USER;
+  const pass = process.env[`PROXY_${wId}_PASSWORD`] || process.env.PROXY_PASSWORD;
+  if (host && port) {
+    const auth = user ? `${encodeURIComponent(user)}:${encodeURIComponent(pass || '')}@` : '';
+    return {
+      server: `http://${host}:${port}`,
+      username: user || undefined,
+      password: pass || undefined,
+      dispatcher: new ProxyAgent(`http://${auth}${host}:${port}`),
+    };
+  }
+  return null;
+}
+
 async function getStsToken(worker) {
   try {
-    const res = await fetch('https://sts.marketanalysis.intracen.org/connect/token', {
+    const proxy = getProxyConfig(worker.id);
+    const fetchOptions = {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -258,7 +278,11 @@ async function getStsToken(worker) {
         password: worker.pass,
         scope: 'openid profile offline_access TradeMap.API Account.API',
       }).toString(),
-    });
+    };
+    if (proxy?.dispatcher) {
+      fetchOptions.dispatcher = proxy.dispatcher;
+    }
+    const res = await fetch('https://sts.marketanalysis.intracen.org/connect/token', fetchOptions);
     const data = await res.json();
     return data.access_token || null;
   } catch {
@@ -438,7 +462,8 @@ async function runWorkerInner(worker) {
   let context = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      context = await chromium.launchPersistentContext(userDataDir, {
+      const proxy = getProxyConfig(wId);
+      const launchOpts = {
         headless: false,
         channel: 'chrome',
         viewport: null,
@@ -449,7 +474,15 @@ async function runWorkerInner(worker) {
           '--no-first-run',
           '--no-default-browser-check',
         ],
-      });
+      };
+      if (proxy) {
+        launchOpts.proxy = {
+          server: proxy.server,
+          username: proxy.username,
+          password: proxy.password,
+        };
+      }
+      context = await chromium.launchPersistentContext(userDataDir, launchOpts);
       break;
     } catch (err) {
       appendLog(`⚠️ Worker #${wId}: Chrome lock error (Attempt ${attempt}/3): ${err.message.slice(0, 80)}`);
