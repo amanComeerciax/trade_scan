@@ -50,6 +50,7 @@ const COMMODITY_MAP: Record<string, { hs: string; category: string }> = {
   dawa: { hs: "3004", category: "Pharmaceutical medicaments" },
   chemical: { hs: "2905", category: "Organic and industrial chemicals" },
   fertilizer: { hs: "3102", category: "Mineral or chemical fertilizers, nitrogenous" },
+  urea: { hs: "310210", category: "Urea & mineral fertilizers" },
   plastic: { hs: "3901", category: "Polymers of ethylene, in primary forms" },
   ceramic: { hs: "6907", category: "Ceramic flags and paving, hearth or wall tiles" },
   tiles: { hs: "6907", category: "Ceramic flags and paving, hearth or wall tiles" },

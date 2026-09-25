@@ -38,6 +38,7 @@ yarn-error.log*
 *.db
 *.db-journal
 *.db-wal
+prisma/sqlite_dump.json
 
 # vercel
 .vercel
@@ -45,3 +46,22 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# browser automation & cache folders
+.chrome*
+.browser-data*
+scripts/profile_*
+scripts/profile_account_*
+*.log
+*.png
+
+# exports and temporary batch files
+exports/
+scripts/.*state*.json
+scripts/.*tasks*.json
+scripts/.*pid*.json
+scripts/*.html
+scripts/*.json
+!scripts/package.json
+
+
