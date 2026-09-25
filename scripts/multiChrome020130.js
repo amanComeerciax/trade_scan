@@ -200,10 +200,13 @@ function appendLog(msg) {
   saveState();
 }
 
+let sessionExtracted = 0;
+
 function saveState() {
   const elapsed = isRunning ? Math.max(1, Math.floor((Date.now() - startTime) / 1000)) : 0;
-  const speed = isRunning ? Math.round((totalExtracted / elapsed) * 60) : 0;
-  const remaining = Math.max(0, 17893 - totalExtracted);
+  // Speed is calculated strictly on new records extracted during this live run
+  const speed = (isRunning && elapsed > 0) ? Math.round((sessionExtracted / elapsed) * 60) : 0;
+  const remaining = Math.max(0, (TOTAL_PAGES * PAGE_SIZE) - sessionExtracted);
   const eta = (isRunning && speed > 0) ? Math.round((remaining / speed) * 60) : 0;
   const progress = isRunning ? Math.min(100, Math.round((completedPages.size / TOTAL_PAGES) * 100)) : 0;
 
@@ -211,6 +214,9 @@ function saveState() {
     isRunning,
     shouldStop,
     batchId: 'batch_020130_4chrome',
+    hsCode: HS_CODE,
+    countryCode: COUNTRY_CODE,
+    tradeFlow: TRADE_FLOW,
     elapsedSeconds: elapsed,
     etaSeconds: eta,
     progressPercent: progress,
@@ -218,7 +224,7 @@ function saveState() {
     totalTasks: TOTAL_PAGES,
     completedTasks: completedPages.size,
     pendingCount: TOTAL_PAGES - completedPages.size,
-    totalExtracted,
+    totalExtracted: sessionExtracted,
     workerCount: ALL_WORKERS.length,
     active: Object.values(workerStates),
     logs,
@@ -859,7 +865,8 @@ function getChromeExecutable() {
       const res = await upsertCompany(companyData, HS_CODE);
 
       pageInserted++;
-      totalExtracted++;
+      sessionExtracted++;
+      totalExtracted = sessionExtracted;
 
       workerStates[wId].currentRecord = pageInserted;
       workerStates[wId].totalExtracted += 1;
@@ -878,7 +885,7 @@ function getChromeExecutable() {
     appendLog(
       `✅ Worker #${wId}: Completed Page ${pageNum} (+${pageInserted} records, ` +
       `📞 ${pagePhonesFound} phones, 👔 ${pageDirectorsFound} directors | ` +
-      `Total DB: ${totalExtracted})`
+      `Session Extracted: ${sessionExtracted})`
     );
     saveState();
     await sleep(PAGE_DELAY_MS);
@@ -905,10 +912,11 @@ async function main() {
     }
   }
 
-  // Count existing records in DB
-  const existing = await prisma.companyProduct.count({ where: { hsCode: HS_CODE } });
-  totalExtracted = existing;
-  appendLog(`📦 Found ${existing} existing records in MongoDB Atlas.`);
+  // Count existing records in DB for this HS Code
+  const existing = await prisma.companyProduct.count({ where: { hsCode: HS_CODE } }).catch(() => 0);
+  totalExtracted = 0;
+  sessionExtracted = 0;
+  appendLog(`📦 Found ${existing} existing records in MongoDB Atlas for HS ${HS_CODE}.`);
   appendLog(`📍 Resuming from Page ${nextClaimPage} (Pages 1-${nextClaimPage - 1} already done).`);
 
   saveState();

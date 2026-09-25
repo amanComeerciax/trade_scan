@@ -30,6 +30,9 @@ interface BatchState {
   totalTasks: number;
   completedTasks: number;
   pendingCount: number;
+  hsCode?: string;
+  tradeFlow?: string;
+  countryCode?: string;
   totalExtracted: number;
   workerCount: number;
   configuredAccountCount?: number;
@@ -75,7 +78,7 @@ export default function BatchDashboard() {
 
   const activeCount = state?.configuredAccountCount || state?.workerCount || 4;
 
-  // Read URL query params on initial load
+  // Read URL query params or localStorage on initial load
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -84,7 +87,12 @@ export default function BatchDashboard() {
       const urlFlow = params.get('flow');
       if (urlHs) setTargetHsCode(urlHs);
       if (urlCountry) setTargetCountry(urlCountry);
-      if (urlFlow) setTargetFlow(urlFlow);
+      if (urlFlow) {
+        setTargetFlow(urlFlow);
+      } else {
+        const savedFlow = localStorage.getItem('tradescan_tradeFlow');
+        if (savedFlow) setTargetFlow(savedFlow);
+      }
     }
   }, []);
 
@@ -98,11 +106,19 @@ export default function BatchDashboard() {
           if (isMounted) {
             setState(data);
             setLoading(false);
-            // If actively running and no custom input yet, sync to the running HS code
-            if (data.isRunning && data.active && data.active.length > 0) {
-              const activeHs = data.active.find((w: any) => w.hsCode)?.hsCode;
-              if (activeHs) {
-                setTargetHsCode((prev) => prev || activeHs);
+            // If actively running, sync to the running HS code, trade flow, and country!
+            if (data.isRunning) {
+              if (data.hsCode) {
+                setTargetHsCode((prev) => prev || data.hsCode);
+              } else if (data.active && data.active.length > 0) {
+                const activeHs = data.active.find((w: any) => w.hsCode)?.hsCode;
+                if (activeHs) setTargetHsCode((prev) => prev || activeHs);
+              }
+              if (data.tradeFlow) {
+                setTargetFlow(data.tradeFlow);
+              }
+              if (data.countryCode) {
+                setTargetCountry((prev) => (prev === '000' && data.countryCode !== '000' ? data.countryCode : prev));
               }
             }
           }
@@ -286,7 +302,7 @@ export default function BatchDashboard() {
               background: state?.isRunning ? '#34d399' : '#f87171',
               boxShadow: state?.isRunning ? '0 0 8px #34d399' : 'none',
             }} />
-            {state?.isRunning ? '8 WORKERS STREAMING' : 'ENGINE READY'}
+            {state?.isRunning ? `${activeCount} WORKERS STREAMING` : 'ENGINE READY'}
           </div>
         </div>
       </div>
@@ -440,7 +456,13 @@ export default function BatchDashboard() {
             </label>
             <select
               value={targetFlow}
-              onChange={(e) => setTargetFlow(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setTargetFlow(val);
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('tradescan_tradeFlow', val);
+                }
+              }}
               style={{
                 width: '100%',
                 padding: '12px 16px',
@@ -586,7 +608,7 @@ export default function BatchDashboard() {
         }}>
           <div style={{ height: '3px', width: '100%', background: '#38bdf8', position: 'absolute', top: 0, left: 0 }} />
           <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Total Verified Ingested
+            Batch Extracted {state?.hsCode ? `(HS ${state.hsCode})` : ''}
           </div>
           <div style={{ fontSize: '36px', fontWeight: '900', color: '#38bdf8', marginTop: '6px', letterSpacing: '-1px' }}>
             {state?.isRunning && state?.totalExtracted ? state.totalExtracted.toLocaleString() : '0'}

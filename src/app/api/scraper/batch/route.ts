@@ -186,17 +186,28 @@ export async function POST(request: Request) {
         isRunning: true,
         shouldStop: false,
         status: 'RUNNING',
+        hsCode,
+        countryCode,
+        tradeFlow,
         workerCount: accountCount,
         totalTasks: 200,
         completedTasks: 0,
         totalExtracted: 0,
         progressPercent: 0,
+        speedRecordsPerMin: 0,
+        elapsedSeconds: 0,
+        etaSeconds: 0,
+        active: [],
         logs: [
           `[${new Date().toLocaleTimeString()}] 🚀 Launching ${accountCount} Chrome Browsers for HS ${hsCode} (${tradeFlow}, Country: ${countryCode})...`
         ],
         updatedAt: new Date().toISOString(),
       };
-      try { fs.writeFileSync(stateFilePath, JSON.stringify(initialState, null, 2)); } catch {}
+      try {
+        fs.writeFileSync(stateFilePath, JSON.stringify(initialState, null, 2));
+        const distStatePath = path.join(process.cwd(), 'scripts', '.distributed_state.json');
+        fs.writeFileSync(distStatePath, JSON.stringify(initialState, null, 2));
+      } catch {}
 
       return NextResponse.json({
         success: true,
