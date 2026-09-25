@@ -71,7 +71,7 @@ export default function BatchDashboard() {
 
   const terminalContainerRef = useRef<HTMLDivElement>(null);
 
-  const activeCount = state?.configuredAccountCount || state?.workerCount || 8;
+  const activeCount = state?.configuredAccountCount || state?.workerCount || 4;
 
   // Read URL query params on initial load
   useEffect(() => {
@@ -630,7 +630,7 @@ export default function BatchDashboard() {
             <span style={{ fontSize: '15px', color: '#94a3b8', fontWeight: '500', marginLeft: '6px' }}>rec/min</span>
           </div>
           <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-            8x Parallel Chrome Pipeline
+            {activeCount}x Parallel Chrome Pipeline
           </div>
         </div>
 
@@ -690,7 +690,7 @@ export default function BatchDashboard() {
       <div style={{ maxWidth: '1360px', margin: '0 auto 28px auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ fontSize: '18px', fontWeight: '800', margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span>👥</span> 8 Active Account Workers (Parallel Chrome Grid)
+            <span>👥</span> {activeCount} Active Account Workers (Parallel Chrome Grid)
           </h2>
           <span style={{ fontSize: '12px', color: '#64748b' }}>
             Automatic token injection • Zero session clash
@@ -702,7 +702,7 @@ export default function BatchDashboard() {
           gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
           gap: '16px',
         }}>
-          {Array.from({ length: 8 }, (_, idx) => {
+          {Array.from({ length: activeCount }, (_, idx) => {
             const wId = idx + 1;
             const w = state?.active?.find((item) => item.workerId === wId);
 
