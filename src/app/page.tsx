@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import { resolveCommodity } from "@/lib/aiParser";
 import { ALL_COUNTRIES } from "@/lib/countries";
 import { TradeScanLogo, TradeScanMark } from "@/components/TradeScanLogo";
@@ -1342,13 +1343,15 @@ export default function Dashboard() {
                 <span>Filter</span>
               </button>
 
-              <button
-                onClick={() => setIsScraperModalOpen(true)}
+              <Link
+                href={selectedHsCode ? `/batch?hsCode=${selectedHsCode}` : "/batch"}
                 className="action-btn primary"
+                style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                title="Open 4-Worker Turbo Scraper Dashboard"
               >
                 <Play size={13} fill="currentColor" />
                 <span>Run Scraper</span>
-              </button>
+              </Link>
 
               <button
                 onClick={() => handleExport("xlsx")}
