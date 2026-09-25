@@ -310,11 +310,14 @@ async function upsertCompany(data, hsCode) {
       });
     }
 
-    let resolvedTradeFlow = 'Exporter';
+    const currentRole = TRADE_FLOW === 'imports' ? 'Importer' : 'Exporter';
+    let resolvedTradeFlow = currentRole;
     if (existing?.tradeFlow) {
-      if (existing.tradeFlow === 'Importer') resolvedTradeFlow = 'Both';
-      else if (existing.tradeFlow.includes('Exporter')) resolvedTradeFlow = existing.tradeFlow;
-      else resolvedTradeFlow = `${existing.tradeFlow}, Exporter`;
+      if (existing.tradeFlow !== currentRole && existing.tradeFlow !== 'Both') {
+        resolvedTradeFlow = 'Both';
+      } else {
+        resolvedTradeFlow = existing.tradeFlow;
+      }
     }
 
     const payload = {
@@ -323,7 +326,7 @@ async function upsertCompany(data, hsCode) {
       countryCode: data.countryCode || undefined,
       address: data.city ? `${data.city}, ${finalCountry}` : finalCountry,
       website: data.website || undefined,
-      sourceUrl: `https://www.trademap.org/en/goods/companies/c/000/exports/p/${hsCode}`,
+      sourceUrl: `https://www.trademap.org/en/goods/companies/c/${COUNTRY_CODE}/${TRADE_FLOW}/p/${hsCode}`,
       phone: data.phone || undefined,
       contactName: data.contactName || undefined,
       contactRole: data.contactRole || undefined,
@@ -355,15 +358,15 @@ async function upsertCompany(data, hsCode) {
 
     // Link CompanyProduct table
     const existingProd = await prisma.companyProduct.findFirst({
-      where: { companyId: company.id, hsCode, tradeType: 'Exporter' },
+      where: { companyId: company.id, hsCode, tradeType: currentRole },
     });
     if (!existingProd) {
       await prisma.companyProduct.create({
         data: {
           companyId: company.id,
           hsCode,
-          productCategory: `HS ${hsCode} Meat of bovine animals`,
-          tradeType: 'Exporter',
+          productCategory: `HS ${hsCode}`,
+          tradeType: currentRole,
         },
       }).catch(() => {});
     }
