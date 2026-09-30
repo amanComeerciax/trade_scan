@@ -206,15 +206,11 @@ export default function Dashboard() {
     hsCode?: string | null;
   } | null>(null);
 
-  // 📥 Export Download Modal Popup State
-  const [exportModal, setExportModal] = useState<{
-    isOpen: boolean;
-    format: "xlsx" | "csv";
-    hsCode?: string;
-    country?: string;
-    status: "generating" | "success" | "error";
-    message: string;
-  } | null>(null);
+  // 📥 Exporting State (shows green 'downloading...' under export buttons)
+  const [isExporting, setIsExporting] = useState<{ xlsx: boolean; csv: boolean }>({
+    xlsx: false,
+    csv: false,
+  });
 
   const wasBatchRunningRef = useRef(false);
 
@@ -728,44 +724,41 @@ export default function Dashboard() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Export handler: shows quick notice and returns to dashboard immediately
-  const handleExport = (format: "xlsx" | "csv", overrideHsCode?: string, overrideCountry?: string) => {
+  // Export handler: fetches file blob and shows green 'downloading...' text until complete
+  const handleExport = async (format: "xlsx" | "csv", overrideHsCode?: string, overrideCountry?: string) => {
     const hs = overrideHsCode !== undefined ? overrideHsCode : selectedHsCode;
     const cntry = overrideCountry !== undefined ? overrideCountry : selectedCountry;
 
-    // 1. Show quick 1.5s notification modal popup
-    setExportModal({
-      isOpen: true,
-      format,
-      hsCode: hs,
-      country: cntry,
-      status: "generating",
-      message: `Export started! Your ${format.toUpperCase()} file is compiling in background and will download automatically.`,
-    });
+    setIsExporting((prev) => ({ ...prev, [format]: true }));
 
-    // 2. Auto-close popup after 1.5s and return user to dashboard
-    setTimeout(() => {
-      setExportModal(null);
-    }, 1500);
+    try {
+      const query = new URLSearchParams({
+        format,
+        search,
+        country: cntry,
+        hsCode: hs,
+        tradeType: selectedTradeType,
+      });
+      const downloadUrl = `/api/export?${query.toString()}`;
 
-    // 3. Trigger immediate browser download
-    const query = new URLSearchParams({
-      format,
-      search,
-      country: cntry,
-      hsCode: hs,
-      tradeType: selectedTradeType,
-    });
-    const downloadUrl = `/api/export?${query.toString()}`;
-    const link = document.createElement("a");
-    link.href = downloadUrl;
-    link.setAttribute(
-      "download",
-      `TradeScan_${hs ? `HS_${hs}_` : ""}${cntry && cntry !== "World" ? `${cntry}_` : ""}Exporters.${format}`
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const res = await fetch(downloadUrl);
+      if (!res.ok) throw new Error("Export failed");
+
+      const blob = await res.blob();
+      const fileName = `TradeScan_${hs ? `HS_${hs}_` : ""}${cntry && cntry !== "World" ? `${cntry}_` : ""}Exporters.${format}`;
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error("Export error:", err);
+    } finally {
+      setIsExporting((prev) => ({ ...prev, [format]: false }));
+    }
   };
 
   const copyToClipboard = (text: string, id: string) => {
@@ -888,50 +881,68 @@ export default function Dashboard() {
               Run Live Scraper
             </button>
 
-            <button
-              onClick={() => handleExport("xlsx")}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "7px",
-                height: "40px",
-                padding: "0 16px",
-                background: selectedHsCode ? "#16a34a" : "#ffffff",
-                color: selectedHsCode ? "#ffffff" : "#0f172a",
-                fontWeight: 700,
-                fontSize: "13px",
-                borderRadius: "10px",
-                border: selectedHsCode ? "none" : "1px solid #cbd5e1",
-                cursor: "pointer",
-                boxShadow: selectedHsCode ? "0 4px 12px rgba(22, 163, 74, 0.25)" : "0 1px 2px rgba(0,0,0,0.05)",
-              }}
-              title={selectedHsCode ? `Export only HS ${selectedHsCode} companies (.xlsx)` : "Export all companies (.xlsx)"}
-            >
-              <FileSpreadsheet size={15} style={{ color: selectedHsCode ? "#ffffff" : "#16a34a" }} />
-              {selectedHsCode ? `Export HS ${selectedHsCode} Excel` : "Export Excel"}
-            </button>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
+              <button
+                onClick={() => handleExport("xlsx")}
+                disabled={isExporting.xlsx}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "7px",
+                  height: "40px",
+                  padding: "0 16px",
+                  background: selectedHsCode ? "#16a34a" : "#ffffff",
+                  color: selectedHsCode ? "#ffffff" : "#0f172a",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  borderRadius: "10px",
+                  border: selectedHsCode ? "none" : "1px solid #cbd5e1",
+                  cursor: isExporting.xlsx ? "wait" : "pointer",
+                  boxShadow: selectedHsCode ? "0 4px 12px rgba(22, 163, 74, 0.25)" : "0 1px 2px rgba(0,0,0,0.05)",
+                  opacity: isExporting.xlsx ? 0.8 : 1,
+                }}
+                title={selectedHsCode ? `Export only HS ${selectedHsCode} companies (.xlsx)` : "Export all companies (.xlsx)"}
+              >
+                <FileSpreadsheet size={15} style={{ color: selectedHsCode ? "#ffffff" : "#16a34a" }} />
+                {selectedHsCode ? `Export HS ${selectedHsCode} Excel` : "Export Excel"}
+              </button>
+              {isExporting.xlsx && (
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#16a34a", position: "absolute", top: "42px", whiteSpace: "nowrap" }}>
+                  downloading...
+                </span>
+              )}
+            </div>
 
-            <button
-              onClick={() => handleExport("csv")}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                height: "40px",
-                padding: "0 14px",
-                background: "#ffffff",
-                color: "#475569",
-                fontWeight: 600,
-                fontSize: "13px",
-                borderRadius: "10px",
-                border: "1px solid #cbd5e1",
-                cursor: "pointer",
-              }}
-              title="Export CSV"
-            >
-              <Download size={14} />
-              CSV
-            </button>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
+              <button
+                onClick={() => handleExport("csv")}
+                disabled={isExporting.csv}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  height: "40px",
+                  padding: "0 14px",
+                  background: "#ffffff",
+                  color: "#475569",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  borderRadius: "10px",
+                  border: "1px solid #cbd5e1",
+                  cursor: isExporting.csv ? "wait" : "pointer",
+                  opacity: isExporting.csv ? 0.8 : 1,
+                }}
+                title="Export CSV"
+              >
+                <Download size={14} />
+                CSV
+              </button>
+              {isExporting.csv && (
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#16a34a", position: "absolute", top: "42px", whiteSpace: "nowrap" }}>
+                  downloading...
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1260,29 +1271,49 @@ export default function Dashboard() {
 
 
 
-              <button
-                onClick={() => handleExport("xlsx")}
-                className="action-btn"
-                title={selectedHsCode ? `Export only HS ${selectedHsCode} (${selectedCountry || 'All markets'})` : "Export all stored companies"}
-                style={{
-                  border: selectedHsCode ? "1.5px solid #16a34a" : undefined,
-                  background: selectedHsCode ? "#f0fdf4" : undefined,
-                  color: selectedHsCode ? "#15803d" : undefined,
-                  fontWeight: selectedHsCode ? 700 : undefined,
-                }}
-              >
-                <FileSpreadsheet size={14} style={{ color: "#16a34a" }} />
-                <span>{selectedHsCode ? `Export HS ${selectedHsCode} Excel` : "Export Excel"}</span>
-              </button>
+              <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
+                <button
+                  onClick={() => handleExport("xlsx")}
+                  disabled={isExporting.xlsx}
+                  className="action-btn"
+                  title={selectedHsCode ? `Export only HS ${selectedHsCode} (${selectedCountry || 'All markets'})` : "Export all stored companies"}
+                  style={{
+                    border: selectedHsCode ? "1.5px solid #16a34a" : undefined,
+                    background: selectedHsCode ? "#f0fdf4" : undefined,
+                    color: selectedHsCode ? "#15803d" : undefined,
+                    fontWeight: selectedHsCode ? 700 : undefined,
+                    opacity: isExporting.xlsx ? 0.8 : 1,
+                  }}
+                >
+                  <FileSpreadsheet size={14} style={{ color: "#16a34a" }} />
+                  <span>{selectedHsCode ? `Export HS ${selectedHsCode} Excel` : "Export Excel"}</span>
+                </button>
+                {isExporting.xlsx && (
+                  <span style={{ fontSize: "11px", fontWeight: 700, color: "#16a34a", position: "absolute", top: "38px", whiteSpace: "nowrap" }}>
+                    downloading...
+                  </span>
+                )}
+              </div>
 
-              <button
-                onClick={() => handleExport("csv")}
-                className="action-btn"
-                title={selectedHsCode ? `Export only HS ${selectedHsCode} as CSV` : "Export CSV"}
-              >
-                <Download size={14} />
-                <span>{selectedHsCode ? `HS ${selectedHsCode} CSV` : "CSV"}</span>
-              </button>
+              <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
+                <button
+                  onClick={() => handleExport("csv")}
+                  disabled={isExporting.csv}
+                  className="action-btn"
+                  title={selectedHsCode ? `Export only HS ${selectedHsCode} as CSV` : "Export CSV"}
+                  style={{
+                    opacity: isExporting.csv ? 0.8 : 1,
+                  }}
+                >
+                  <Download size={14} />
+                  <span>{selectedHsCode ? `HS ${selectedHsCode} CSV` : "CSV"}</span>
+                </button>
+                {isExporting.csv && (
+                  <span style={{ fontSize: "11px", fontWeight: 700, color: "#16a34a", position: "absolute", top: "38px", whiteSpace: "nowrap" }}>
+                    downloading...
+                  </span>
+                )}
+              </div>
 
               {companies.length > 0 && (
                 <button
@@ -3338,107 +3369,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 📥 High-Speed Export Download Progress Modal Popup */}
-      {exportModal?.isOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 9999,
-            background: "rgba(15, 23, 42, 0.65)",
-            backdropFilter: "blur(8px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "20px",
-          }}
-        >
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
-              borderRadius: "20px",
-              padding: "32px",
-              maxWidth: "460px",
-              width: "100%",
-              boxShadow: "0 20px 40px rgba(0, 0, 0, 0.2)",
-              textAlign: "center",
-            }}
-          >
-            <div
-              style={{
-                width: "64px",
-                height: "64px",
-                borderRadius: "50%",
-                background: exportModal.status === "success" ? "#dcfce7" : exportModal.status === "error" ? "#fef2f2" : "#eff6ff",
-                border: `2px solid ${exportModal.status === "success" ? "#86efac" : exportModal.status === "error" ? "#fecaca" : "#bfdbfe"}`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 20px auto",
-                fontSize: "26px",
-              }}
-            >
-              {exportModal.status === "generating" && <RefreshCw size={28} className="spin" style={{ color: "#2563eb" }} />}
-              {exportModal.status === "success" && "✅"}
-              {exportModal.status === "error" && "❌"}
-            </div>
 
-            <h3 style={{ margin: "0 0 8px 0", fontSize: "20px", fontWeight: 800, color: "#0f172a" }}>
-              {exportModal.status === "generating"
-                ? `Preparing Your ${exportModal.format.toUpperCase()} Export...`
-                : exportModal.status === "success"
-                ? "Download Complete!"
-                : "Export Failed"}
-            </h3>
-
-            <p style={{ margin: "0 0 20px 0", fontSize: "14px", color: "#64748b", lineHeight: 1.5 }}>
-              {exportModal.message}
-            </p>
-
-            {exportModal.status === "generating" && (
-              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "16px", textAlign: "left" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "8px" }}>
-                  <span>Formatting & Compiling Records</span>
-                  <span style={{ color: "#2563eb" }}>Processing...</span>
-                </div>
-                <div style={{ width: "100%", height: "6px", background: "#e2e8f0", borderRadius: "3px", overflow: "hidden" }}>
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      background: "linear-gradient(90deg, #2563eb 0%, #3b82f6 50%, #60a5fa 100%)",
-                      borderRadius: "3px",
-                    }}
-                  />
-                </div>
-                <div style={{ fontSize: "11px", color: "#64748b", marginTop: "10px", lineHeight: 1.4 }}>
-                  ⚡ Downloading from MongoDB Atlas Cloud. The download will start automatically once compiling is done.
-                </div>
-              </div>
-            )}
-
-            {exportModal.status !== "generating" && (
-              <button
-                onClick={() => setExportModal(null)}
-                style={{
-                  marginTop: "12px",
-                  padding: "10px 24px",
-                  background: "#0f172a",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: "10px",
-                  fontWeight: 700,
-                  fontSize: "13px",
-                  cursor: "pointer",
-                }}
-              >
-                Close
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
