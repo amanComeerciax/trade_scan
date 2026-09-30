@@ -211,17 +211,79 @@ export async function DELETE(request: Request) {
 
     // 1. Wipe all data (sequential to avoid transaction timeout on large datasets)
     if (all === "true") {
-      // Delete children first, then parents — no transaction needed since order handles FK
-      const prodResult = await prisma.companyProduct.deleteMany();
-      const compResult = await prisma.company.deleteMany();
-      // Also clear scrape jobs and queue tasks
-      await prisma.scrapeJob.deleteMany().catch(() => {});
-      await prisma.scrapeQueueTask.deleteMany().catch(() => {});
-      invalidateMetaCache();
-      return NextResponse.json({
-        success: true,
-        message: `All data cleared: ${compResult.count} companies, ${prodResult.count} products deleted.`,
-      });
+      const hsCode = (searchParams.get("hsCode") || "").trim();
+      const country = (searchParams.get("country") || "").trim();
+      const tradeType = (searchParams.get("tradeType") || "").trim();
+      const search = (searchParams.get("search") || "").trim();
+      
+      const hasFilters = hsCode || country || tradeType || search;
+
+      if (!hasFilters) {
+        // Delete children first, then parents — no transaction needed since order handles FK
+        const prodResult = await prisma.companyProduct.deleteMany();
+        const compResult = await prisma.company.deleteMany();
+        // Also clear scrape jobs and queue tasks
+        await prisma.scrapeJob.deleteMany().catch(() => {});
+        await prisma.scrapeQueueTask.deleteMany().catch(() => {});
+        invalidateMetaCache();
+        return NextResponse.json({
+          success: true,
+          message: `All data cleared: ${compResult.count} companies, ${prodResult.count} products deleted.`,
+        });
+      } else {
+        const where: Prisma.CompanyWhereInput = {};
+        
+        if (hsCode || tradeType) {
+          const matchingProducts = await prisma.companyProduct.findMany({
+            where: {
+              ...(hsCode ? { hsCode: { startsWith: hsCode } } : {}),
+              ...(tradeType ? { tradeType: { contains: tradeType, mode: "insensitive" } } : {}),
+            },
+            select: { companyId: true },
+          });
+          const matchedCompanyIds = [...new Set(matchingProducts.map((p) => p.companyId))];
+          if (matchedCompanyIds.length === 0) {
+            return NextResponse.json({ success: true, message: "No matching companies found to delete." });
+          }
+          where.id = { in: matchedCompanyIds };
+        }
+
+        if (country) {
+          where.country = country;
+        }
+
+        if (search) {
+          where.OR = [
+            { name: { contains: search, mode: "insensitive" } },
+            { city: { contains: search, mode: "insensitive" } },
+            { contactName: { contains: search, mode: "insensitive" } },
+            { phone: { contains: search, mode: "insensitive" } },
+          ];
+        }
+
+        const companiesToDelete = await prisma.company.findMany({
+          where,
+          select: { id: true }
+        });
+        const companyIds = companiesToDelete.map(c => c.id);
+
+        if (companyIds.length === 0) {
+           return NextResponse.json({ success: true, message: "No matching companies found to delete." });
+        }
+
+        const prodResult = await prisma.companyProduct.deleteMany({
+          where: { companyId: { in: companyIds } }
+        });
+        const compResult = await prisma.company.deleteMany({
+          where: { id: { in: companyIds } }
+        });
+
+        invalidateMetaCache();
+        return NextResponse.json({
+          success: true,
+          message: `Filtered data cleared: ${compResult.count} companies, ${prodResult.count} products deleted.`,
+        });
+      }
     }
 
     // 2. Single company delete

@@ -452,10 +452,22 @@ export default function Dashboard() {
   };
 
   const handleClearAllData = async () => {
-    if (!confirm("Are you sure you want to clear ALL scraped companies from the database?")) return;
+    let confirmMsg = "Are you sure you want to clear ALL scraped companies from the entire database?";
+    if (selectedHsCode || selectedCountry || selectedTradeType || debouncedSearch) {
+      confirmMsg = "Are you sure you want to delete ONLY the companies matching your current filters? (This cannot be undone)";
+    }
+    
+    if (!confirm(confirmMsg)) return;
+
     try {
       setIsDeleting(true);
-      const res = await fetch("/api/companies?all=true", { method: "DELETE" });
+      const queryParams = new URLSearchParams({ all: "true" });
+      if (selectedHsCode) queryParams.append("hsCode", selectedHsCode);
+      if (selectedCountry) queryParams.append("country", selectedCountry);
+      if (selectedTradeType) queryParams.append("tradeType", selectedTradeType);
+      if (debouncedSearch) queryParams.append("search", debouncedSearch);
+
+      const res = await fetch(`/api/companies?${queryParams.toString()}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
         setSelectedIds([]);
@@ -464,7 +476,7 @@ export default function Dashboard() {
         fetchStats();
       }
     } catch (err) {
-      console.error("Error clearing all data:", err);
+      console.error("Error clearing data:", err);
     } finally {
       setIsDeleting(false);
     }
@@ -2488,14 +2500,15 @@ export default function Dashboard() {
                                 flexDirection: "column",
                                 gap: "5px",
                                 boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                                minWidth: 0,
                               }}
                             >
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                  <span style={{ fontWeight: 800, fontSize: "12px", color: "#0f172a" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+                                  <span style={{ fontWeight: 800, fontSize: "12px", color: "#0f172a", whiteSpace: "nowrap" }}>
                                     Worker #{w.workerId}
                                   </span>
-                                  <span style={{ fontSize: "10.5px", color: "#64748b" }}>
+                                  <span style={{ fontSize: "10.5px", color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     ({w.displayAccount || w.email?.split("@")[0] || `Acc ${w.workerId}`})
                                   </span>
                                 </div>
@@ -2508,13 +2521,15 @@ export default function Dashboard() {
                                     background: badgeColor.bg,
                                     color: badgeColor.text,
                                     border: `1px solid ${badgeColor.border}`,
+                                    whiteSpace: "nowrap",
+                                    flexShrink: 0,
                                   }}
                                 >
                                   {badgeColor.label}
                                 </span>
                               </div>
 
-                              <div style={{ fontSize: "11px", color: "#1e293b", fontWeight: 600 }}>
+                              <div style={{ fontSize: "11px", color: "#1e293b", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {w.hsCode ? (
                                   <>
                                     <span style={{ background: "#f1f5f9", padding: "1px 6px", borderRadius: "6px" }}>
@@ -2579,6 +2594,8 @@ export default function Dashboard() {
                           display: "flex",
                           flexDirection: "column",
                           gap: "2px",
+                          wordBreak: "break-word",
+                          whiteSpace: "pre-wrap",
                         }}
                       >
                         {batchStatus.logs && batchStatus.logs.length > 0 ? (
