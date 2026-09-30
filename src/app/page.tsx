@@ -206,6 +206,16 @@ export default function Dashboard() {
     hsCode?: string | null;
   } | null>(null);
 
+  // 📥 Export Download Modal Popup State
+  const [exportModal, setExportModal] = useState<{
+    isOpen: boolean;
+    format: "xlsx" | "csv";
+    hsCode?: string;
+    country?: string;
+    status: "generating" | "success" | "error";
+    message: string;
+  } | null>(null);
+
   const wasBatchRunningRef = useRef(false);
 
   // 🎵 Soft audio chime on data arrival
@@ -343,7 +353,7 @@ export default function Dashboard() {
       const data = await res.json();
       setNotification({
         id: Date.now().toString(),
-        title: "🚀 8 Chrome Browsers Launching!",
+        title: "8 Chrome Browsers Launching!",
         message: `Opening 8 Chrome windows with STS Auto-Login for HS ${targetHs}. They will remain open on your desktop.`,
         type: "info",
         hsCode: targetHs,
@@ -580,7 +590,7 @@ export default function Dashboard() {
     const finalHs = customHsInput.trim() || resolveCommodity(scrapeHsCode).hsCode || scrapeHsCode || "310210";
     const finalFlow = scrapeTradeFlow === "imports" ? "I" : "E";
 
-    setScrapeLogs(`[${new Date().toLocaleTimeString()}] 🚀 Launching Universal Background Engine on MongoDB Atlas...\nTarget: ${scrapeCountry} (${scrapeCountryCode}) | HS: ${finalHs} | Flow: ${scrapeTradeFlow.toUpperCase()}\nInitializing Playwright authenticated session...`);
+    setScrapeLogs(`[${new Date().toLocaleTimeString()}] Launching Universal Background Engine on MongoDB Atlas...\nTarget: ${scrapeCountry} (${scrapeCountryCode}) | HS: ${finalHs} | Flow: ${scrapeTradeFlow.toUpperCase()}\nInitializing Playwright authenticated session...`);
 
     try {
       const res = await fetch("/api/scraper", {
@@ -718,10 +728,27 @@ export default function Dashboard() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Export handlers
+  // Export handler: shows quick notice and returns to dashboard immediately
   const handleExport = (format: "xlsx" | "csv", overrideHsCode?: string, overrideCountry?: string) => {
     const hs = overrideHsCode !== undefined ? overrideHsCode : selectedHsCode;
     const cntry = overrideCountry !== undefined ? overrideCountry : selectedCountry;
+
+    // 1. Show quick 1.5s notification modal popup
+    setExportModal({
+      isOpen: true,
+      format,
+      hsCode: hs,
+      country: cntry,
+      status: "generating",
+      message: `Export started! Your ${format.toUpperCase()} file is compiling in background and will download automatically.`,
+    });
+
+    // 2. Auto-close popup after 1.5s and return user to dashboard
+    setTimeout(() => {
+      setExportModal(null);
+    }, 1500);
+
+    // 3. Trigger immediate browser download
     const query = new URLSearchParams({
       format,
       search,
@@ -761,68 +788,13 @@ export default function Dashboard() {
       <aside className="sidebar">
         {/* Brand */}
         <div className="sidebar-header">
-          <TradeScanLogo size={30} showText={true} showBadge={true} />
+          <TradeScanLogo size={30} showText={true} showBadge={false} />
           <button className="collapse-btn" title="Collapse sidebar">
             <PanelLeftClose size={14} />
           </button>
         </div>
 
-        {/* MongoDB Atlas Cloud Connection Status */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "10px 12px",
-            background: "#ffffff",
-            border: "1px solid #e2e8f0",
-            borderRadius: "10px",
-            marginBottom: "20px",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", background: "#10b981", boxShadow: "0 0 8px rgba(16, 185, 129, 0.7)" }} />
-            <div>
-              <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "12px", lineHeight: 1.2 }}>MongoDB Atlas</div>
-              <div style={{ fontSize: "10px", color: "#64748b" }}>Cluster0 • tradescan</div>
-            </div>
-          </div>
-          <span style={{ fontSize: "10px", fontWeight: 700, background: "#dcfce7", color: "#166534", padding: "2px 7px", borderRadius: "10px" }}>
-            Active
-          </span>
-        </div>
-
-        {/* Navigation Sections */}
-        <div className="nav-section">
-          <div className="nav-section-title">Engine Tools</div>
-          <div
-            onClick={() => { window.location.href = '/batch'; }}
-            className="nav-item"
-            style={{
-              cursor: "pointer",
-              background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-              color: "#ffffff",
-              fontWeight: 600,
-              boxShadow: "0 2px 6px rgba(15, 23, 42, 0.2)",
-              marginBottom: "6px",
-            }}
-          >
-            <Play size={14} fill="currentColor" />
-            <span>🚀 Run Live Scraper</span>
-          </div>
-          <div
-            onClick={() => setIsAIModalOpen(true)}
-            className="nav-item"
-            style={{ cursor: "pointer" }}
-          >
-            <Sparkles size={14} style={{ color: "#8b5cf6" }} />
-            <span>Ask AI Intelligence</span>
-            <span style={{ marginLeft: "auto", fontSize: "10px", color: "#94a3b8", background: "#f1f5f9", padding: "1px 5px", borderRadius: "4px" }}>Ctrl+K</span>
-          </div>
-        </div>
-
-        <div className="nav-section" style={{ flex: 1 }}>
+        <div className="nav-section" style={{ flex: 1, marginTop: "12px" }}>
           <div className="nav-section-title">Commodity Directories</div>
           <div
             onClick={() => { setSelectedHsCode(""); setPage(1); }}
@@ -860,53 +832,6 @@ export default function Dashboard() {
               </div>
             );
           })}
-        </div>
-
-        {/* Sidebar Footer Live DB Card */}
-        <div className="sidebar-footer">
-          <div
-            style={{
-              padding: "14px",
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
-              borderRadius: "12px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-              <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", color: "#64748b" }}>Live Database</span>
-              <span style={{ fontSize: "10px", fontWeight: 700, background: "#dcfce7", color: "#166534", padding: "1px 6px", borderRadius: "8px" }}>🟢 Atlas Cloud</span>
-            </div>
-            <div style={{ fontSize: "20px", fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>
-              {total.toLocaleString()} <span style={{ fontSize: "12px", fontWeight: 500, color: "#64748b" }}>Profiles</span>
-            </div>
-            <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
-              {withContactCount.toLocaleString()} Contacts • {withPhoneCount.toLocaleString()} Phones
-            </div>
-            <button
-              onClick={() => setIsScraperModalOpen(true)}
-              style={{
-                width: "100%",
-                marginTop: "12px",
-                padding: "8px 0",
-                fontSize: "12px",
-                fontWeight: 700,
-                color: "#ffffff",
-                background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "6px",
-                boxShadow: "0 2px 6px rgba(15, 23, 42, 0.15)",
-              }}
-            >
-              <Plus size={13} />
-              Extract New HS Code
-            </button>
-          </div>
         </div>
       </aside>
 
@@ -960,7 +885,7 @@ export default function Dashboard() {
               }}
             >
               <Play size={13} fill="currentColor" />
-              🚀 Run Live Scraper
+              Run Live Scraper
             </button>
 
             <button
@@ -1013,16 +938,6 @@ export default function Dashboard() {
         {/* Sub-header Bar */}
         <div className="sub-header-bar" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <div
-              className="ask-pill"
-              onClick={() => setIsAIModalOpen(true)}
-              style={{ cursor: "pointer" }}
-              title="Open Natural Language Trade Intelligence (Ctrl+K)"
-            >
-              <Command size={13} style={{ color: "#2563eb" }} />
-              <span>Search Trade Intelligence</span>
-              <span className="kbd-shortcut">Ctrl+K</span>
-            </div>
             <div
               className="events-indicator"
               style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }}
@@ -1214,19 +1129,7 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="metric-card">
-                  <div className="metric-left">
-                    <span className="metric-title">Origin Country</span>
-                    <div className="metric-value-row">
-                      <span className="metric-val" style={{ fontSize: "20px" }}>India</span>
-                      <span className="metric-change">ISO 699</span>
-                    </div>
-                    <span className="metric-sub">TradeMap Official Exporters</span>
-                  </div>
-                  <div className="metric-circle-icon">
-                    <Globe size={16} />
-                  </div>
-                </div>
+
 
                 <div className="metric-card">
                   <div className="metric-left">
@@ -1355,15 +1258,7 @@ export default function Dashboard() {
                 <span>Filter</span>
               </button>
 
-              <Link
-                href={selectedHsCode ? `/batch?hsCode=${selectedHsCode}` : "/batch"}
-                className="action-btn primary"
-                style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                title="Open 4-Worker Turbo Scraper Dashboard"
-              >
-                <Play size={13} fill="currentColor" />
-                <span>Run Scraper</span>
-              </Link>
+
 
               <button
                 onClick={() => handleExport("xlsx")}
@@ -2746,7 +2641,7 @@ export default function Dashboard() {
                           </>
                         ) : (
                           <>
-                            <span>🚀 Open All 8 Chrome Browsers with Auto-Login</span>
+                            <span>Open All 8 Chrome Browsers with Auto-Login</span>
                           </>
                         )}
                       </button>
@@ -2759,7 +2654,7 @@ export default function Dashboard() {
                         {[
                           { count: 1, label: "1 Account", tag: "Sequential" },
                           { count: 2, label: "2 Accounts ⚡", tag: "2x Parallel" },
-                          { count: 4, label: "4 Accounts 🚀", tag: "4x Fast" },
+                          { count: 4, label: "4 Accounts", tag: "4x Fast" },
                           { count: 8, label: "8 Accounts 👑", tag: "8x Turbo Max" },
                         ].map((w) => (
                           <button
@@ -3371,7 +3266,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 🚀 Floating Minimized Batch Progress Widget (Visible when scraping runs in background) */}
+      {/* Floating Minimized Batch Progress Widget (Visible when scraping runs in background) */}
       {batchStatus?.isRunning && !isScraperModalOpen && (
         <div
           onClick={() => {
@@ -3439,6 +3334,108 @@ export default function Dashboard() {
           >
             <span>Live HUD</span>
             <span>⚡</span>
+          </div>
+        </div>
+      )}
+
+      {/* 📥 High-Speed Export Download Progress Modal Popup */}
+      {exportModal?.isOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "rgba(15, 23, 42, 0.65)",
+            backdropFilter: "blur(8px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "20px",
+              padding: "32px",
+              maxWidth: "460px",
+              width: "100%",
+              boxShadow: "0 20px 40px rgba(0, 0, 0, 0.2)",
+              textAlign: "center",
+            }}
+          >
+            <div
+              style={{
+                width: "64px",
+                height: "64px",
+                borderRadius: "50%",
+                background: exportModal.status === "success" ? "#dcfce7" : exportModal.status === "error" ? "#fef2f2" : "#eff6ff",
+                border: `2px solid ${exportModal.status === "success" ? "#86efac" : exportModal.status === "error" ? "#fecaca" : "#bfdbfe"}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 20px auto",
+                fontSize: "26px",
+              }}
+            >
+              {exportModal.status === "generating" && <RefreshCw size={28} className="spin" style={{ color: "#2563eb" }} />}
+              {exportModal.status === "success" && "✅"}
+              {exportModal.status === "error" && "❌"}
+            </div>
+
+            <h3 style={{ margin: "0 0 8px 0", fontSize: "20px", fontWeight: 800, color: "#0f172a" }}>
+              {exportModal.status === "generating"
+                ? `Preparing Your ${exportModal.format.toUpperCase()} Export...`
+                : exportModal.status === "success"
+                ? "Download Complete!"
+                : "Export Failed"}
+            </h3>
+
+            <p style={{ margin: "0 0 20px 0", fontSize: "14px", color: "#64748b", lineHeight: 1.5 }}>
+              {exportModal.message}
+            </p>
+
+            {exportModal.status === "generating" && (
+              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "16px", textAlign: "left" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "8px" }}>
+                  <span>Formatting & Compiling Records</span>
+                  <span style={{ color: "#2563eb" }}>Processing...</span>
+                </div>
+                <div style={{ width: "100%", height: "6px", background: "#e2e8f0", borderRadius: "3px", overflow: "hidden" }}>
+                  <div
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      background: "linear-gradient(90deg, #2563eb 0%, #3b82f6 50%, #60a5fa 100%)",
+                      borderRadius: "3px",
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: "11px", color: "#64748b", marginTop: "10px", lineHeight: 1.4 }}>
+                  ⚡ Downloading from MongoDB Atlas Cloud. The download will start automatically once compiling is done.
+                </div>
+              </div>
+            )}
+
+            {exportModal.status !== "generating" && (
+              <button
+                onClick={() => setExportModal(null)}
+                style={{
+                  marginTop: "12px",
+                  padding: "10px 24px",
+                  background: "#0f172a",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "10px",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+            )}
           </div>
         </div>
       )}

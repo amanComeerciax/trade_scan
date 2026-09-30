@@ -64,4 +64,5 @@ scripts/*.html
 scripts/*.json
 !scripts/package.json
 
+TradeScan-Scraper-Profile/
 
