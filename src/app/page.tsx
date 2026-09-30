@@ -206,6 +206,16 @@ export default function Dashboard() {
     hsCode?: string | null;
   } | null>(null);
 
+  // Auto-dismiss toast notification after 6.5 seconds
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => {
+        setNotification(null);
+      }, 6500);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
+
   // 📥 Exporting State (shows green 'downloading...' under export buttons)
   const [isExporting, setIsExporting] = useState<{ xlsx: boolean; csv: boolean }>({
     xlsx: false,
@@ -399,6 +409,7 @@ export default function Dashboard() {
   // Selection & Deletion State
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deletingBannerMsg, setDeletingBannerMsg] = useState<string | null>(null);
 
   const toggleSelectAll = () => {
     if (selectedIds.length === companies.length && companies.length > 0) {
@@ -458,15 +469,11 @@ export default function Dashboard() {
   };
 
   const handleClearAllData = async () => {
-    let confirmMsg = "Are you sure you want to clear ALL scraped companies from the entire database?";
-    if (selectedHsCode || selectedCountry || selectedTradeType || debouncedSearch) {
-      confirmMsg = "Are you sure you want to delete ONLY the companies matching your current filters? (This cannot be undone)";
-    }
-    
-    if (!confirm(confirmMsg)) return;
+    const startTime = Date.now();
+    setDeletingBannerMsg("🗑️ Deleting data... Please wait while records are being cleared.");
+    setIsDeleting(true);
 
     try {
-      setIsDeleting(true);
       const queryParams = new URLSearchParams({ all: "true" });
       if (selectedHsCode) queryParams.append("hsCode", selectedHsCode);
       if (selectedCountry) queryParams.append("country", selectedCountry);
@@ -478,14 +485,29 @@ export default function Dashboard() {
       if (data.success) {
         setSelectedIds([]);
         setActiveCompany(null);
-        fetchData(1);
-        fetchStats();
+        await fetchData(1);
+        await fetchStats();
+
+        const elapsed = Date.now() - startTime;
+        const remainingTime = Math.max(0, 3500 - elapsed);
+
+        setTimeout(() => {
+          setDeletingBannerMsg(null);
+          setIsDeleting(false);
+          setNotification({
+            id: Date.now().toString(),
+            title: "🗑️ Data Cleared Successfully!",
+            message: "All requested records have been permanently cleared from your database.",
+            type: "success",
+          });
+        }, remainingTime);
+        return;
       }
     } catch (err) {
       console.error("Error clearing data:", err);
-    } finally {
-      setIsDeleting(false);
     }
+    setDeletingBannerMsg(null);
+    setIsDeleting(false);
   };
 
   // Manual fetch for pagination and refresh
@@ -3183,24 +3205,53 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-      {/* 🔔 Floating Completion Toast Notification ("Data Aa Gaya") */}
-      {notification && (
+      {/* 🗑️ Top Deleting Banner Popup */}
+      {(deletingBannerMsg || isDeleting) && (
         <div
           style={{
             position: "fixed",
-            bottom: "28px",
-            right: "28px",
-            zIndex: 999999,
-            maxWidth: "420px",
+            top: "24px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 9999999,
+            background: "#0f172a",
+            color: "#ffffff",
+            border: "1.5px solid #ef4444",
+            borderRadius: "14px",
+            padding: "14px 28px",
+            boxShadow: "0 12px 35px rgba(239, 68, 68, 0.35), 0 4px 16px rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            fontSize: "14px",
+            fontWeight: 700,
+            letterSpacing: "0.2px",
+          }}
+        >
+          <RefreshCw size={18} className="spin" style={{ color: "#f87171" }} />
+          <span>{deletingBannerMsg || "🗑️ Deleting data... Please wait while records are being cleared."}</span>
+        </div>
+      )}
+
+      {/* 🔔 Top Center Completion Toast Notification ("Data Clear / Data Arrived") */}
+      {notification && !deletingBannerMsg && !isDeleting && (
+        <div
+          style={{
+            position: "fixed",
+            top: "24px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 9999999,
+            minWidth: "340px",
+            maxWidth: "480px",
             background: "#ffffff",
-            border: "1.5px solid #22c55e",
+            border: `2px solid ${notification.type === "warning" ? "#f59e0b" : "#22c55e"}`,
             borderRadius: "16px",
-            boxShadow: "0 20px 45px -10px rgba(34, 197, 94, 0.35), 0 10px 20px -5px rgba(0, 0, 0, 0.08)",
-            padding: "16px 18px",
+            boxShadow: "0 16px 40px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(34, 197, 94, 0.2)",
+            padding: "16px 20px",
             display: "flex",
             flexDirection: "column",
             gap: "10px",
-            animation: "slideInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         >
           <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
@@ -3221,7 +3272,7 @@ export default function Dashboard() {
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>
+                <h4 style={{ margin: 0, fontSize: "15px", fontWeight: 800, color: "#0f172a" }}>
                   {notification.title}
                 </h4>
                 <button
@@ -3240,60 +3291,35 @@ export default function Dashboard() {
                   <X size={16} />
                 </button>
               </div>
-              <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#475569", lineHeight: 1.5 }}>
+              <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: "#475569", lineHeight: 1.5, fontWeight: 500 }}>
                 {notification.message}
               </p>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: "8px", marginTop: "2px", paddingLeft: "50px" }}>
-            {notification.hsCode && (
+          {notification.hsCode && (
+            <div style={{ display: "flex", gap: "8px", marginTop: "2px", paddingLeft: "50px" }}>
               <button
                 onClick={() => {
                   setSelectedHsCode(notification.hsCode || "");
+                  setPage(1);
                   setNotification(null);
                 }}
                 style={{
-                  padding: "6px 12px",
-                  borderRadius: "8px",
-                  background: "#22c55e",
-                  color: "#ffffff",
-                  fontSize: "11.5px",
+                  padding: "5px 12px",
+                  fontSize: "12px",
                   fontWeight: 700,
-                  border: "none",
+                  color: "#1d4ed8",
+                  background: "#eff6ff",
+                  border: "1px solid #bfdbfe",
+                  borderRadius: "6px",
                   cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "5px",
                 }}
               >
-                <span>View HS {notification.hsCode}</span>
-                <span>→</span>
+                View HS {notification.hsCode}
               </button>
-            )}
-            <button
-              onClick={() => {
-                handleExport("xlsx", notification.hsCode || undefined);
-                setNotification(null);
-              }}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "8px",
-                background: "#f0fdf4",
-                color: "#166534",
-                border: "1px solid #bbf7d0",
-                fontSize: "11.5px",
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "5px",
-              }}
-            >
-              <FileSpreadsheet size={13} />
-              <span>Export Excel</span>
-            </button>
-          </div>
+            </div>
+          )}
         </div>
       )}
 
