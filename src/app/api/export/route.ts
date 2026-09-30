@@ -29,7 +29,7 @@ export async function GET(request: Request) {
       ];
     }
 
-    if (country) {
+    if (country && country !== "World" && country !== "000" && country.toLowerCase() !== "all") {
       where.country = country;
     }
 
@@ -104,13 +104,14 @@ export async function GET(request: Request) {
     XLSX.utils.book_append_sheet(workbook, worksheet, "Exporters");
 
     const timestamp = new Date().toISOString().slice(0, 10);
+    const filePrefix = `TradeScan_${hsCode ? `HS_${hsCode}_` : ""}${tradeType ? `${tradeType}_` : ""}${country ? `${country}_` : ""}Exporters_${timestamp}`;
 
     if (format === "csv") {
       const csvOutput = XLSX.utils.sheet_to_csv(worksheet);
       return new Response(csvOutput, {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": `attachment; filename="trademap_exporters_${timestamp}.csv"`,
+          "Content-Disposition": `attachment; filename="${filePrefix}.csv"`,
         },
       });
     } else {
@@ -123,7 +124,7 @@ export async function GET(request: Request) {
         headers: {
           "Content-Type":
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "Content-Disposition": `attachment; filename="trademap_exporters_${timestamp}.xlsx"`,
+          "Content-Disposition": `attachment; filename="${filePrefix}.xlsx"`,
         },
       });
     }
