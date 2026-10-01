@@ -930,8 +930,24 @@ async function main() {
   }
   sessionExtracted = 0;
   totalExtracted = initialDbCount;
-  appendLog(`📦 Found ${initialDbCount} existing records in MongoDB Atlas for HS ${HS_CODE} (${TRADE_FLOW}).`);
-  appendLog(`📍 Resuming from Page ${nextClaimPage} (Pages 1-${nextClaimPage - 1} already done).`);
+
+  const forceFresh = process.argv.includes('--fresh') || process.env.FRESH_START === 'true';
+
+  // CRITICAL FIX: If DB has 0 records (data was deleted) or forceFresh is requested, reset checkpoint to Page 1!
+  if (initialDbCount === 0 || forceFresh) {
+    completedPages.clear();
+    claimedPages.clear();
+    nextClaimPage = 1;
+    try {
+      if (fs.existsSync(CHECKPOINT_FILE)) {
+        fs.unlinkSync(CHECKPOINT_FILE);
+      }
+    } catch {}
+    appendLog(`🔄 Reset Checkpoint: Database has 0 records for HS ${HS_CODE} (${TRADE_FLOW}). Starting fresh from Page 1!`);
+  } else {
+    appendLog(`📦 Found ${initialDbCount} existing records in MongoDB Atlas for HS ${HS_CODE} (${TRADE_FLOW}).`);
+    appendLog(`📍 Resuming from Page ${nextClaimPage} (Pages 1-${nextClaimPage - 1} already done).`);
+  }
 
   saveState();
 

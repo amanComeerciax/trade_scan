@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import fs from "fs";
+import path from "path";
 
 // In-memory cache for aggregate metadata (countries & HS codes) to avoid full collection scans on every request
 interface MetaCache {
@@ -226,6 +228,20 @@ export async function DELETE(request: Request) {
         await prisma.scrapeJob.deleteMany().catch(() => {});
         await prisma.scrapeQueueTask.deleteMany().catch(() => {});
         invalidateMetaCache();
+
+        // Also wipe all scraper checkpoint files so fresh scraping can start from Page 1
+        try {
+          const localAppData = process.env.LOCALAPPDATA || "";
+          if (localAppData && fs.existsSync(localAppData)) {
+            const files = fs.readdirSync(localAppData);
+            for (const f of files) {
+              if (f.startsWith("TradeScan-checkpoint-")) {
+                try { fs.unlinkSync(path.join(localAppData, f)); } catch {}
+              }
+            }
+          }
+        } catch {}
+
         return NextResponse.json({
           success: true,
           message: `All data cleared: ${compResult.count} companies, ${prodResult.count} products deleted.`,

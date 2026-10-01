@@ -162,7 +162,7 @@ export default function BatchDashboard() {
     setBrowserLoading(false);
   };
 
-  const handleStartExtraction = async () => {
+  const handleStartExtraction = async (forceFresh = false) => {
     const trimmedHs = targetHsCode.trim();
     if (!trimmedHs) {
       alert('Please enter or select a Product / HS Code first.');
@@ -178,6 +178,7 @@ export default function BatchDashboard() {
           hsCode: trimmedHs,
           countryCode: targetCountry || '000',
           tradeFlow: targetFlow || 'exports',
+          fresh: forceFresh,
         }),
       });
       const res = await fetch('/api/scraper/batch');
@@ -504,27 +505,54 @@ export default function BatchDashboard() {
           paddingTop: '18px',
         }}>
           {!state?.isRunning ? (
-            <button
-              onClick={handleStartExtraction}
-              disabled={actionLoading}
-              style={{
-                padding: '12px 24px',
-                background: '#0f172a',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '10px',
-                fontWeight: '800',
-                fontSize: '14px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.2)',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              {actionLoading ? '⏳ Initializing Stream...' : '► Run Extraction Engine'}
-            </button>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <button
+                onClick={() => handleStartExtraction(false)}
+                disabled={actionLoading}
+                style={{
+                  padding: '12px 24px',
+                  background: '#0f172a',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  fontWeight: '800',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 2px 8px rgba(15, 23, 42, 0.2)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {actionLoading ? '⏳ Initializing Stream...' : '► Run Extraction Engine'}
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm('Start fresh from Page 1? Any existing checkpoint for this HS code will be reset.')) {
+                    handleStartExtraction(true);
+                  }
+                }}
+                disabled={actionLoading}
+                style={{
+                  padding: '12px 18px',
+                  background: '#ffffff',
+                  color: '#475569',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '10px',
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.15s ease',
+                }}
+                title="Start fresh from Page 1, resetting any saved checkpoint"
+              >
+                🔄 Start from Page 1 (Fresh)
+              </button>
+            </div>
           ) : (
             <button
               onClick={handleStop}

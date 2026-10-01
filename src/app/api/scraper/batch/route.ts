@@ -163,9 +163,19 @@ export async function POST(request: Request) {
       const logFilePath = path.join(process.cwd(), 'scripts', 'batch_scraper.log');
       const logOut = fs.openSync(logFilePath, 'a');
 
+      const scriptArgs = [scriptPath, hsCode, countryCode, tradeFlow];
+      if (body.fresh) {
+        scriptArgs.push('--fresh');
+        try {
+          const localAppData = process.env.LOCALAPPDATA || '';
+          const cpFile = path.join(localAppData, `TradeScan-checkpoint-${hsCode}-${countryCode}-${tradeFlow}.json`);
+          if (fs.existsSync(cpFile)) fs.unlinkSync(cpFile);
+        } catch {}
+      }
+
       const child = spawn(
         process.execPath,
-        [scriptPath, hsCode, countryCode, tradeFlow],
+        scriptArgs,
         {
           detached: true,
           stdio: ['ignore', logOut, logOut],
